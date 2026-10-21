@@ -10,8 +10,8 @@ android {
         applicationId "com.omnimodder.studio"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0-PRO"
+        versionCode 2
+        versionName "2.0-PRO"
     }
 
     buildTypes {
@@ -40,9 +40,9 @@ android {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
-    // Official Android APK Signer (V1 / V2 / V3 signing on-device)
+    // Official Google APK Signer (V1 + V2 + V3 signing directly on phone)
     implementation 'com.android.tools.build:apksig:8.3.2'
-    // BouncyCastle for generating RSA-2048 X.509 signing certificates on-device
+    // BouncyCastle for RSA-2048 X.509 key generation & Original Cert SHA-1 extraction
     implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
     implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
 }
