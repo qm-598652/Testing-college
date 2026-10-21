@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Spoof Google Play Store Installer (com.android.vending) for API<=29",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+), ([vp]\\d+)\\}, Landroid/content/pm/PackageManager;->getInstallerPackageName\\(Ljava/lang/String;\\)Ljava/lang/String;\\s*\\n\\s*move-result-object ([vp]\\d+)",
+    "replace": "const-string \\3, \"com.android.vending\""
+  },
+  {
+    "name": "Spoof Google Play Store InstallSourceInfo (com.android.vending) for API>=30",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+)\\}, Landroid/content/pm/InstallSourceInfo;->getInstallingPackageName\\(\\)Ljava/lang/String;\\s*\\n\\s*move-result-object ([vp]\\d+)",
+    "replace": "const-string \\2, \"com.android.vending\""
+  },
+  {
+    "name": "Force Google Play BillingResult.getResponseCode() to return BILLING_RESPONSE_RESULT_OK (0)",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+)\\}, Lcom/android/billingclient/api/BillingResult;->getResponseCode\\(\\)I\\s*\\n\\s*move-result ([vp]\\d+)",
+    "replace": "const/4 \\2, 0x0"
+  },
+  {
+    "name": "Force Google Play Purchase.getPurchaseState() to return PURCHASED (1)",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+)\\}, Lcom/android/billingclient/api/Purchase;->getPurchaseState\\(\\)I\\s*\\n\\s*move-result ([vp]\\d+)",
+    "replace": "const/4 \\2, 0x1"
+  },
+  {
+    "name": "Disable Firebase Analytics Event Telemetry",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+), ([vp]\\d+), ([vp]\\d+)\\}, Lcom/google/firebase/analytics/FirebaseAnalytics;->logEvent\\(Ljava/lang/String;Landroid/os/Bundle;\\)V",
+    "replace": "nop"
+  },
+  {
+    "name": "Disable Facebook AppEventsLogger Telemetry",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+), ([vp]\\d+)\\}, Lcom/facebook/appevents/AppEventsLogger;->logEvent\\(Ljava/lang/String;\\)V",
+    "replace": "nop"
+  },
+  {
+    "name": "Disable Mock Location Detection (isFromMockProvider -> false)",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+)\\}, Landroid/location/Location;->isFromMockProvider\\(\\)Z\\s*\\n\\s*move-result ([vp]\\d+)",
+    "replace": "const/4 \\2, 0x0"
+  },
+  {
+    "name": "Disable Android S+ Mock Location Detection (isMock -> false)",
+    "enabled": true,
+    "search": "invoke-virtual \\{([vp]\\d+)\\}, Landroid/location/Location;->isMock\\(\\)Z\\s*\\n\\s*move-result ([vp]\\d+)",
+    "replace": "const/4 \\2, 0x0"
+  },
+  {
+    "name": "Bypass Settings.Secure ADB / Developer Options Detection",
+    "enabled": true,
+    "search": "\"adb_enabled\"",
+    "replace": "\"adb_ignored\""
+  },
+  {
+    "name": "Bypass Settings.Global Development Settings Enabled Check",
+    "enabled": true,
+    "search": "\"development_settings_enabled\"",
+    "replace": "\"development_settings_ignored\""
+  },
+  {
+    "name": "Neutralize System.exit(I)V Anti-Tamper Force Kills",
+    "enabled": true,
+    "search": "invoke-static \\{([vp]\\d+)\\}, Ljava/lang/System;->exit\\(I\\)V",
+    "replace": "nop"
+  },
+  {
+    "name": "Neutralize Process.killProcess(I)V Anti-Tamper Self-Termination",
+    "enabled": true,
+    "search": "invoke-static \\{([vp]\\d+)\\}, Landroid/os/Process;->killProcess\\(I\\)V",
+    "replace": "nop"
+  }
+]
