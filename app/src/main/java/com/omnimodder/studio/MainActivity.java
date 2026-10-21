@@ -12,7 +12,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -76,22 +75,21 @@ public class MainActivity extends AppCompatActivity {
         root.setPadding(pad, pad, pad, pad);
         scrollView.addView(root);
 
-        // Header
         TextView title = new TextView(this);
-        title.setText("⚡ OmniModder Studio v1.0");
+        title.setText("⚡ OmniModder Studio v2.0");
         title.setTextColor(Color.parseColor("#22C55E"));
         title.setTextSize(22f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("On-Device Universal APK Patcher, Ad/Popup Remover, Capturable Unpinner & V1/V2/V3 Signer");
+        subtitle.setText("Universal On-Device APK Modder, Ad/Popup Killer, SSL Unpinner, Original Signature Spoofer & V1/V2/V3 Signer");
         subtitle.setTextColor(Color.parseColor("#94A3B8"));
         subtitle.setTextSize(12.5f);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
-        // Section 1: Target APK Source (Gallery / Installed Apps / Direct URL)
+        // Card 1: Input APK Selection
         LinearLayout sourceCard = createCard();
         root.addView(sourceCard);
 
@@ -121,46 +119,47 @@ public class MainActivity extends AppCompatActivity {
         fetchUrlBtn.setOnClickListener(v -> downloadApkFromUrl(urlInput.getText().toString().trim()));
         sourceCard.addView(fetchUrlBtn);
 
-        // Section 2: Custom Tab / Button ID Remover
+        // Card 2: Custom Tab / Button Remover
         LinearLayout tabCard = createCard();
         root.addView(tabCard);
 
         TextView tabTitle = new TextView(this);
-        tabTitle.setText("✂️ Remove Specific Tabs / Buttons / Views");
+        tabTitle.setText("✂️ Remove Any Tab / Button / View IDs");
         tabTitle.setTextColor(Color.parseColor("#38BDF8"));
         tabTitle.setTypeface(Typeface.DEFAULT_BOLD);
         tabCard.addView(tabTitle);
 
         tabRemoveInput = new EditText(this);
-        tabRemoveInput.setHint("Enter view/tab IDs (e.g. tab_shop, nav_ads, btn_vip, banner_view)");
+        tabRemoveInput.setHint("Comma-separated IDs (e.g. tab_shop, nav_ads, btn_vip)");
         tabRemoveInput.setHintTextColor(Color.parseColor("#64748B"));
         tabRemoveInput.setTextColor(Color.WHITE);
         tabRemoveInput.setText("ad_view,ad_container,banner_ad,tab_shop,btn_upgrade,vip_tab");
         tabCard.addView(tabRemoveInput);
 
-        // Section 3: 100+ Modding Features Multi-Module Checkboxes
+        // Card 3: 100+ Modding Features Checkboxes
         LinearLayout featuresCard = createCard();
         root.addView(featuresCard);
 
         TextView featHeader = new TextView(this);
-        featHeader.setText("🛠️ Active Patch Modules (100+ Bytecode & AXML Hooks)");
+        featHeader.setText("🛠️ Active Patch Modules (100+ Hooks)");
         featHeader.setTextColor(Color.parseColor("#22C55E"));
         featHeader.setTypeface(Typeface.DEFAULT_BOLD);
         featHeader.setPadding(0, 0, 0, dp(8));
         featuresCard.addView(featHeader);
 
         String[][] modules = new String[][]{
-                {"KILL_ADS", "1. Remove All Ads (AdMob, Unity, AppLovin, IronSource, Meta, Vungle, Pangle, Mintegral + 25 Ad Domains)"},
-                {"KILL_POPUPS", "2. Remove Dialogs, Force-Update Prompts, Rate-Us & GDPR Consent Pop-ups"},
-                {"REMOVE_TABS", "3. Strip Target Tab Buttons, BottomNav Items & Ad Containers in Binary XML"},
+                {"KILL_ADS", "1. Remove All Ads (AdMob, Unity, AppLovin, IronSource, Meta, Vungle, Pangle, Mintegral + 30 Ad Domains)"},
+                {"KILL_POPUPS", "2. Kill Dialogs, Force-Update Prompts, Rate-Us & Consent Pop-ups"},
+                {"REMOVE_TABS", "3. Remove Specified Tab Buttons, BottomNav Items & Banner Containers"},
                 {"MAKE_CAPTURABLE", "4. Make APK Capturable (Bypass SSL Pinning, Trust User CAs, Hide VPN/Proxy/Reqable/Canary)"},
-                {"REMOVE_FLAG_SECURE", "5. Remove Restrictions: Unlock Screenshots & Screen Recording (Strip FLAG_SECURE)"},
-                {"UNLOCK_PREMIUM", "6. Unlock Pro/VIP/Subscribed Boolean Getters & Mock Billing Success"},
-                {"BYPASS_ROOT_EMULATOR", "7. Bypass Root, Magisk, Xposed, Frida, Emulator & ADB Debugging Detection"},
-                {"SPOOF_INSTALLER", "8. Spoof Google Play Store Installer (com.android.vending) & Anti-Tamper Killers"},
-                {"KILL_ANALYTICS", "9. Disable Firebase Crashlytics, Analytics, Sentry & Facebook Telemetry"},
-                {"UNLOCK_MOCK_LOCATION", "10. Bypass Mock Location Detection & Clone/Dual-Space Restrictions"},
-                {"AUTO_SIGN_V1_V2_V3", "11. Sign APK with V1 (JAR) + V2 (Full APK) + V3 Cryptographic Signature"}
+                {"REMOVE_FLAG_SECURE", "5. Remove Restrictions: Enable Screenshots & Screen Recording (Strip FLAG_SECURE)"},
+                {"UNLOCK_PREMIUM", "6. Unlock Pro/VIP/Subscribed Boolean Checks & Mock Play Billing Success"},
+                {"SPOOF_SIGNATURE", "7. Spoof Original Developer Signature / SHA-1 Hash & Bypass Tamper Checks"},
+                {"SPOOF_INSTALLER", "8. Spoof Google Play Store Installer (com.android.vending)"},
+                {"BYPASS_ROOT_EMULATOR", "9. Bypass Root, Magisk, Xposed, Frida, Emulator & ADB Debugging Checks"},
+                {"KILL_ANALYTICS", "10. Disable Firebase Analytics, Crashlytics, Sentry & Facebook Telemetry"},
+                {"UNLOCK_MOCK_LOCATION", "11. Bypass Mock Location Detection & Dual-Space/Clone Restrictions"},
+                {"AUTO_SIGN_V1_V2_V3", "12. Sign APK with V1 (JAR) + V2 (Full Block) + V3 Cryptographic Signature"}
         };
 
         for (String[] mod : modules) {
@@ -174,7 +173,6 @@ public class MainActivity extends AppCompatActivity {
             featureCheckBoxes.add(cb);
         }
 
-        // Action Buttons
         patchNowBtn = createStyledButton("🚀 PATCH & SIGN APK NOW (100+ MODS)", "#22C55E");
         patchNowBtn.setTextColor(Color.parseColor("#052E16"));
         patchNowBtn.setOnClickListener(v -> runPatchingPipeline());
@@ -186,7 +184,7 @@ public class MainActivity extends AppCompatActivity {
         installModBtn.setOnClickListener(v -> installSignedApk());
         root.addView(installModBtn);
 
-        // Live Console Output
+        // Console Log Card
         LinearLayout logCard = createCard();
         root.addView(logCard);
 
@@ -201,7 +199,7 @@ public class MainActivity extends AppCompatActivity {
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setTextSize(11.5f);
         logView.setPadding(0, dp(8), 0, 0);
-        logView.setText("[Ready] Select an APK from your phone gallery, installed apps, or direct URL.\n");
+        logView.setText("[Ready] Pick an APK from Gallery, Installed Apps, or Direct URL.\n");
         logCard.addView(logView);
 
         setContentView(scrollView);
@@ -210,10 +208,10 @@ public class MainActivity extends AppCompatActivity {
     private void copyUriToWorkspace(Uri uri) {
         executor.execute(() -> {
             try {
-                appendLog("[*] Copying selected APK from phone storage...");
+                appendLog("[*] Reading selected APK from phone gallery/storage...");
                 File workDir = new File(getExternalFilesDir(null), "workspace");
                 if (!workDir.exists()) workDir.mkdirs();
-                File dest = new File(workDir, "input_target.apk");
+                File dest = new File(workDir, "gallery_input.apk");
 
                 try (InputStream in = getContentResolver().openInputStream(uri);
                      FileOutputStream out = new FileOutputStream(dest)) {
@@ -226,10 +224,10 @@ public class MainActivity extends AppCompatActivity {
                 selectedApkFile = dest;
                 mainHandler.post(() -> {
                     selectedFileLabel.setText("Target APK: " + dest.getName() + " (" + (dest.length() / 1024) + " KB)");
-                    appendLog("[+] Loaded APK from storage: " + dest.getAbsolutePath());
+                    appendLog("[+] Loaded APK: " + dest.getAbsolutePath());
                 });
             } catch (Exception e) {
-                appendLog("[!] Failed to read APK from gallery: " + e.getMessage());
+                appendLog("[!] Gallery read error: " + e.getMessage());
             }
         });
     }
@@ -256,10 +254,7 @@ public class MainActivity extends AppCompatActivity {
             mainHandler.post(() -> {
                 new AlertDialog.Builder(this)
                         .setTitle("Select Installed App to Mod")
-                        .setItems(labels, (dialog, which) -> {
-                            ApplicationInfo chosen = userApps.get(which);
-                            copyInstalledApkToWorkspace(chosen);
-                        })
+                        .setItems(labels, (dialog, which) -> copyInstalledApkToWorkspace(userApps.get(which)))
                         .setNegativeButton("Cancel", null)
                         .show();
             });
@@ -283,10 +278,10 @@ public class MainActivity extends AppCompatActivity {
                 selectedApkFile = dest;
                 mainHandler.post(() -> {
                     selectedFileLabel.setText("Target APK: " + appInfo.packageName + " (" + (dest.length() / 1024) + " KB)");
-                    appendLog("[+] Extracted APK from installed app: " + appInfo.packageName);
+                    appendLog("[+] Extracted installed APK: " + appInfo.packageName);
                 });
             } catch (Exception e) {
-                appendLog("[!] Could not extract installed APK: " + e.getMessage());
+                appendLog("[!] Failed to extract APK: " + e.getMessage());
             }
         });
     }
@@ -298,10 +293,10 @@ public class MainActivity extends AppCompatActivity {
         }
         executor.execute(() -> {
             try {
-                appendLog("[*] Downloading APK from: " + urlStr);
+                appendLog("[*] Downloading APK from URL: " + urlStr);
                 File workDir = new File(getExternalFilesDir(null), "workspace");
                 if (!workDir.exists()) workDir.mkdirs();
-                File dest = new File(workDir, "downloaded_target.apk");
+                File dest = new File(workDir, "url_target.apk");
 
                 HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
                 conn.setInstanceFollowRedirects(true);
@@ -321,19 +316,19 @@ public class MainActivity extends AppCompatActivity {
                     final long finalTotal = total;
                     selectedApkFile = dest;
                     mainHandler.post(() -> {
-                        selectedFileLabel.setText("Target APK: downloaded_target.apk (" + (finalTotal / 1024) + " KB)");
-                        appendLog("[+] Downloaded APK (" + (finalTotal / 1024) + " KB) successfully.");
+                        selectedFileLabel.setText("Target APK: url_target.apk (" + (finalTotal / 1024) + " KB)");
+                        appendLog("[+] Downloaded APK (" + (finalTotal / 1024) + " KB).");
                     });
                 }
             } catch (Exception e) {
-                appendLog("[!] Download error: " + e.getMessage());
+                appendLog("[!] URL download error: " + e.getMessage());
             }
         });
     }
 
     private void runPatchingPipeline() {
         if (selectedApkFile == null || !selectedApkFile.exists()) {
-            Toast.makeText(this, "First pick an APK from Gallery, Installed Apps, or Direct Link!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Pick an APK first!", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -351,8 +346,9 @@ public class MainActivity extends AppCompatActivity {
                 case "MAKE_CAPTURABLE": config.makeCapturable = on; break;
                 case "REMOVE_FLAG_SECURE": config.removeFlagSecure = on; break;
                 case "UNLOCK_PREMIUM": config.unlockPremium = on; break;
-                case "BYPASS_ROOT_EMULATOR": config.bypassRoot = on; break;
+                case "SPOOF_SIGNATURE": config.spoofSignature = on; break;
                 case "SPOOF_INSTALLER": config.spoofInstaller = on; break;
+                case "BYPASS_ROOT_EMULATOR": config.bypassRoot = on; break;
                 case "KILL_ANALYTICS": config.killAnalytics = on; break;
                 case "UNLOCK_MOCK_LOCATION": config.unlockMockLocation = on; break;
                 case "AUTO_SIGN_V1_V2_V3": config.signApk = on; break;
@@ -362,10 +358,8 @@ public class MainActivity extends AppCompatActivity {
 
         executor.execute(() -> {
             try {
-                File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                if (outDir == null || !outDir.canWrite()) {
-                    outDir = getExternalFilesDir(null);
-                }
+                File outDir = getExternalFilesDir("ModdedAPKs");
+                if (outDir != null && !outDir.exists()) outDir.mkdirs();
                 File signedApk = new File(outDir, "Modded_Signed_" + System.currentTimeMillis() + ".apk");
 
                 ApkPatchEngine engine = new ApkPatchEngine(this::appendLog);
@@ -375,7 +369,7 @@ public class MainActivity extends AppCompatActivity {
                 mainHandler.post(() -> {
                     patchNowBtn.setEnabled(true);
                     installModBtn.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "Modded APK Saved: " + signedApk.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Signed APK Ready! Tap Install below.", Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
                 appendLog("[ERROR] " + e.getMessage());
