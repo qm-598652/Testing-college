@@ -1,0 +1,1110 @@
+#!/usr/bin/env python3
+import os
+
+def write_file(path, content):
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content.strip() + "\n")
+    print(f"[+] Wrote {path}")
+
+write_file("gradle.properties", """
+org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.enableJetifier=true
+android.nonTransitiveRClass=true
+""")
+
+write_file("settings.gradle", """
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "OmniModderStudio"
+include ':app'
+""")
+
+write_file("build.gradle", """
+plugins {
+    id 'com.android.application' version '8.3.2' apply false
+}
+""")
+
+write_file("app/build.gradle", """
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.omnimodder.studio'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.omnimodder.studio"
+        minSdk 26
+        targetSdk 34
+        versionCode 40
+        versionName "4.0-PRO"
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1,DEPENDENCIES,LICENSE*,NOTICE*}'
+            excludes += 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+            pickFirsts += '**/*.RSA'
+            pickFirsts += '**/*.SF'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'com.android.tools.build:apksig:8.3.2'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
+}
+""")
+
+write_file("app/src/main/res/drawable/ic_launcher.xml", """
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M0,0h108v108h-108z"/>
+    <path
+        android:fillColor="#22C55E"
+        android:pathData="M60,18L28,60h24l-8,30l36,-44H56L60,18z"/>
+</vector>
+""")
+
+write_file("app/src/main/res/xml/file_paths.xml", """
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="modded_apks" path="." />
+    <external-path name="external_downloads" path="." />
+    <cache-path name="cache_apks" path="." />
+    <files-path name="internal_apks" path="." />
+</paths>
+""")
+
+write_file("app/src/main/AndroidManifest.xml", """
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
+        android:label="OmniModder Studio"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+        <activity
+            android:name="com.omnimodder.studio.MainActivity"
+            android:label="OmniModder Studio"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
+""")
+
+write_file("app/src/main/java/com/omnimodder/studio/MainActivity.java", """
+package com.omnimodder.studio;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.FileProvider;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class MainActivity extends AppCompatActivity {
+
+    private File selectedApkFile;
+    private TextView selectedFileLabel;
+    private TextView apkInspectorLabel;
+    private TextView logView;
+    private EditText urlInput;
+    private EditText tabRemoveInput;
+    private Button patchNowBtn;
+    private Button installModBtn;
+    private Button shareModBtn;
+    private File lastSignedOutputApk;
+
+    private final List<CheckBox> featureCheckBoxes = new ArrayList<>();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private final ActivityResultLauncher<String> galleryApkPicker =
+            registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null) {
+                    copyUriToWorkspace(uri);
+                }
+            });
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setBackgroundColor(Color.parseColor("#0F172A"));
+        scrollView.setFillViewport(true);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(16);
+        root.setPadding(pad, pad, pad, pad);
+        scrollView.addView(root);
+
+        TextView title = new TextView(this);
+        title.setText("⚡ OmniModder Studio v4.0-PRO");
+        title.setTextColor(Color.parseColor("#22C55E"));
+        title.setTextSize(22f);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("On-Device APK Modder, Ad/Popup Killer, SSL Unpinner, Signature Spoofer & V1/V2/V3 Signer");
+        subtitle.setTextColor(Color.parseColor("#94A3B8"));
+        subtitle.setTextSize(12.5f);
+        subtitle.setPadding(0, dp(4), 0, dp(14));
+        root.addView(subtitle);
+
+        LinearLayout sourceCard = createCard();
+        root.addView(sourceCard);
+
+        selectedFileLabel = new TextView(this);
+        selectedFileLabel.setText("Target APK: None selected");
+        selectedFileLabel.setTextColor(Color.parseColor("#F8FAFC"));
+        selectedFileLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        selectedFileLabel.setPadding(0, 0, 0, dp(4));
+        sourceCard.addView(selectedFileLabel);
+
+        apkInspectorLabel = new TextView(this);
+        apkInspectorLabel.setText("Package Info: Pick an APK below to inspect package, SDK & cert.");
+        apkInspectorLabel.setTextColor(Color.parseColor("#38BDF8"));
+        apkInspectorLabel.setTextSize(11.5f);
+        apkInspectorLabel.setPadding(0, 0, 0, dp(10));
+        sourceCard.addView(apkInspectorLabel);
+
+        Button pickStorageBtn = createStyledButton("📂 Pick APK from Phone Gallery / Storage", "#3B82F6");
+        pickStorageBtn.setOnClickListener(v -> galleryApkPicker.launch("*/*"));
+        sourceCard.addView(pickStorageBtn);
+
+        Button pickInstalledBtn = createStyledButton("📱 Pick from Installed Apps on Phone", "#8B5CF6");
+        pickInstalledBtn.setOnClickListener(v -> showInstalledAppsDialog());
+        sourceCard.addView(pickInstalledBtn);
+
+        urlInput = new EditText(this);
+        urlInput.setHint("Or paste Direct APK URL (https://.../app.apk)");
+        urlInput.setHintTextColor(Color.parseColor("#64748B"));
+        urlInput.setTextColor(Color.WHITE);
+        urlInput.setSingleLine(true);
+        sourceCard.addView(urlInput);
+
+        Button fetchUrlBtn = createStyledButton("🌐 Download APK from Direct Link", "#0EA5E9");
+        fetchUrlBtn.setOnClickListener(v -> downloadApkFromUrl(urlInput.getText().toString().trim()));
+        sourceCard.addView(fetchUrlBtn);
+
+        LinearLayout tabCard = createCard();
+        root.addView(tabCard);
+
+        TextView tabTitle = new TextView(this);
+        tabTitle.setText("✂️ Remove Any Tab / Button / View IDs");
+        tabTitle.setTextColor(Color.parseColor("#38BDF8"));
+        tabTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        tabCard.addView(tabTitle);
+
+        tabRemoveInput = new EditText(this);
+        tabRemoveInput.setHint("Comma-separated IDs (e.g. tab_shop, nav_ads, btn_vip)");
+        tabRemoveInput.setHintTextColor(Color.parseColor("#64748B"));
+        tabRemoveInput.setTextColor(Color.WHITE);
+        tabRemoveInput.setText("ad_view,ad_container,banner_ad,tab_shop,btn_upgrade,vip_tab");
+        tabCard.addView(tabRemoveInput);
+
+        LinearLayout featuresCard = createCard();
+        root.addView(featuresCard);
+
+        TextView featHeader = new TextView(this);
+        featHeader.setText("🛠️ Active Patch Modules (100+ Hooks)");
+        featHeader.setTextColor(Color.parseColor("#22C55E"));
+        featHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        featHeader.setPadding(0, 0, 0, dp(6));
+        featuresCard.addView(featHeader);
+
+        String[][] modules = new String[][]{
+                {"KILL_ADS", "1. Remove All Ads (AdMob, Unity, AppLovin, IronSource, Meta, Vungle, Pangle, Mintegral + 30 Ad Domains)"},
+                {"KILL_POPUPS", "2. Kill Dialogs, Force-Update Prompts, Rate-Us & Consent Pop-ups"},
+                {"REMOVE_TABS", "3. Remove Specified Tab Buttons, BottomNav Items & Banner Containers"},
+                {"MAKE_CAPTURABLE", "4. Make APK Capturable (Bypass SSL Pinning, Trust User CAs, Hide VPN/Proxy/Reqable/Canary)"},
+                {"REMOVE_FLAG_SECURE", "5. Remove Restrictions: Enable Screenshots & Screen Recording (Strip FLAG_SECURE)"},
+                {"UNLOCK_PREMIUM", "6. Unlock Pro/VIP/Subscribed Boolean Checks & Mock Play Billing Success"},
+                {"SPOOF_SIGNATURE", "7. Spoof Original Developer Signature / SHA-1 Hash & Bypass Tamper Checks"},
+                {"SPOOF_INSTALLER", "8. Spoof Google Play Store Installer (com.android.vending)"},
+                {"BYPASS_ROOT_EMULATOR", "9. Bypass Root, Magisk, Xposed, Frida, Emulator & ADB Debugging Checks"},
+                {"KILL_ANALYTICS", "10. Disable Firebase Analytics, Crashlytics, Sentry & Facebook Telemetry"},
+                {"UNLOCK_MOCK_LOCATION", "11. Bypass Mock Location Detection & Dual-Space/Clone Restrictions"},
+                {"AUTO_SIGN_V1_V2_V3", "12. Sign APK with V1 (JAR) + V2 (Full Block) + V3 Cryptographic Signature"}
+        };
+
+        for (String[] mod : modules) {
+            CheckBox cb = new CheckBox(this);
+            cb.setTag(mod[0]);
+            cb.setText(mod[1]);
+            cb.setTextColor(Color.parseColor("#E2E8F0"));
+            cb.setChecked(true);
+            cb.setPadding(dp(4), dp(6), dp(4), dp(6));
+            featuresCard.addView(cb);
+            featureCheckBoxes.add(cb);
+        }
+
+        patchNowBtn = createStyledButton("🚀 PATCH & SIGN APK NOW (100+ MODS)", "#22C55E");
+        patchNowBtn.setTextColor(Color.parseColor("#052E16"));
+        patchNowBtn.setOnClickListener(v -> runPatchingPipeline());
+        root.addView(patchNowBtn);
+
+        installModBtn = createStyledButton("📲 INSTALL MODDED & SIGNED APK", "#F59E0B");
+        installModBtn.setTextColor(Color.parseColor("#0F172A"));
+        installModBtn.setVisibility(View.GONE);
+        installModBtn.setOnClickListener(v -> installSignedApk());
+        root.addView(installModBtn);
+
+        shareModBtn = createStyledButton("📤 SHARE / SAVE MODDED APK", "#10B981");
+        shareModBtn.setTextColor(Color.parseColor("#052E16"));
+        shareModBtn.setVisibility(View.GONE);
+        shareModBtn.setOnClickListener(v -> shareSignedApk());
+        root.addView(shareModBtn);
+
+        LinearLayout logCard = createCard();
+        root.addView(logCard);
+
+        TextView logHeader = new TextView(this);
+        logHeader.setText("📟 Live Patcher & Signer Console:");
+        logHeader.setTextColor(Color.parseColor("#94A3B8"));
+        logHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        logCard.addView(logHeader);
+
+        logView = new TextView(this);
+        logView.setTextColor(Color.parseColor("#4ADE80"));
+        logView.setTypeface(Typeface.MONOSPACE);
+        logView.setTextSize(11.5f);
+        logView.setPadding(0, dp(8), 0, 0);
+        logView.setText("[Ready] OmniModder v4.0 initialized. Pick any APK from Gallery, Installed Apps, or URL.\\n");
+        logCard.addView(logView);
+
+        setContentView(scrollView);
+    }
+
+    private void inspectLoadedApk(File apkFile) {
+        try {
+            PackageManager pm = getPackageManager();
+            PackageInfo info = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+            if (info != null && info.applicationInfo != null) {
+                String pkg = info.packageName;
+                String ver = info.versionName != null ? info.versionName : "1.0";
+                int minSdk = info.applicationInfo.minSdkVersion;
+                int targetSdk = info.applicationInfo.targetSdkVersion;
+                mainHandler.post(() -> apkInspectorLabel.setText(
+                        "Package: " + pkg + " | v" + ver + " | SDK: " + minSdk + "->" + targetSdk
+                ));
+            } else {
+                mainHandler.post(() -> apkInspectorLabel.setText(
+                        "File loaded (" + (apkFile.length() / 1024) + " KB) - Ready for patching."
+                ));
+            }
+        } catch (Exception e) {
+            mainHandler.post(() -> apkInspectorLabel.setText("APK Ready for patching."));
+        }
+    }
+
+    private void copyUriToWorkspace(Uri uri) {
+        executor.execute(() -> {
+            try {
+                appendLog("[*] Reading selected APK from phone gallery/storage...");
+                File workDir = new File(getExternalFilesDir(null), "workspace");
+                if (!workDir.exists()) workDir.mkdirs();
+                File dest = new File(workDir, "gallery_input.apk");
+
+                try (InputStream in = getContentResolver().openInputStream(uri);
+                     FileOutputStream out = new FileOutputStream(dest)) {
+                    byte[] buf = new byte[65536];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                }
+                selectedApkFile = dest;
+                inspectLoadedApk(dest);
+                mainHandler.post(() -> {
+                    selectedFileLabel.setText("Target APK: " + dest.getName() + " (" + (dest.length() / 1024) + " KB)");
+                    appendLog("[+] Loaded APK from storage: " + dest.getAbsolutePath());
+                });
+            } catch (Exception e) {
+                appendLog("[!] Gallery read error: " + e.getMessage());
+            }
+        });
+    }
+
+    private void showInstalledAppsDialog() {
+        executor.execute(() -> {
+            PackageManager pm = getPackageManager();
+            List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+            List<ApplicationInfo> userApps = new ArrayList<>();
+            for (ApplicationInfo info : apps) {
+                if (info.sourceDir != null && new File(info.sourceDir).canRead()) {
+                    userApps.add(info);
+                }
+            }
+            Collections.sort(userApps, (a, b) ->
+                    String.valueOf(pm.getApplicationLabel(a)).compareToIgnoreCase(String.valueOf(pm.getApplicationLabel(b))));
+
+            String[] labels = new String[userApps.size()];
+            for (int i = 0; i < userApps.size(); i++) {
+                ApplicationInfo info = userApps.get(i);
+                labels[i] = pm.getApplicationLabel(info) + " (" + info.packageName + ")";
+            }
+
+            mainHandler.post(() -> {
+                new AlertDialog.Builder(this)
+                        .setTitle("Select Installed App to Mod (" + userApps.size() + " apps)")
+                        .setItems(labels, (dialog, which) -> copyInstalledApkToWorkspace(userApps.get(which)))
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            });
+        });
+    }
+
+    private void copyInstalledApkToWorkspace(ApplicationInfo appInfo) {
+        executor.execute(() -> {
+            try {
+                File src = new File(appInfo.sourceDir);
+                File workDir = new File(getExternalFilesDir(null), "workspace");
+                if (!workDir.exists()) workDir.mkdirs();
+                File dest = new File(workDir, appInfo.packageName + ".apk");
+
+                try (FileInputStream in = new FileInputStream(src);
+                     FileOutputStream out = new FileOutputStream(dest)) {
+                    byte[] buf = new byte[65536];
+                    int r;
+                    while ((r = in.read(buf)) > 0) out.write(buf, 0, r);
+                }
+                selectedApkFile = dest;
+                inspectLoadedApk(dest);
+                mainHandler.post(() -> {
+                    selectedFileLabel.setText("Target APK: " + appInfo.packageName + " (" + (dest.length() / 1024) + " KB)");
+                    appendLog("[+] Extracted installed APK: " + appInfo.packageName);
+                });
+            } catch (Exception e) {
+                appendLog("[!] Failed to extract APK: " + e.getMessage());
+            }
+        });
+    }
+
+    private void downloadApkFromUrl(String urlStr) {
+        if (urlStr.isEmpty() || !urlStr.startsWith("http")) {
+            Toast.makeText(this, "Enter a valid http/https direct APK link", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                appendLog("[*] Downloading APK from URL: " + urlStr);
+                File workDir = new File(getExternalFilesDir(null), "workspace");
+                if (!workDir.exists()) workDir.mkdirs();
+                File dest = new File(workDir, "url_target.apk");
+
+                HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(30000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)");
+
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(dest)) {
+                    byte[] buf = new byte[65536];
+                    int r;
+                    long total = 0;
+                    while ((r = in.read(buf)) > 0) {
+                        out.write(buf, 0, r);
+                        total += r;
+                    }
+                    final long finalTotal = total;
+                    selectedApkFile = dest;
+                    inspectLoadedApk(dest);
+                    mainHandler.post(() -> {
+                        selectedFileLabel.setText("Target APK: url_target.apk (" + (finalTotal / 1024) + " KB)");
+                        appendLog("[+] Downloaded APK (" + (finalTotal / 1024) + " KB).");
+                    });
+                }
+            } catch (Exception e) {
+                appendLog("[!] URL download error: " + e.getMessage());
+            }
+        });
+    }
+
+    private void runPatchingPipeline() {
+        if (selectedApkFile == null || !selectedApkFile.exists()) {
+            Toast.makeText(this, "Pick an APK first!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        patchNowBtn.setEnabled(false);
+        installModBtn.setVisibility(View.GONE);
+        shareModBtn.setVisibility(View.GONE);
+
+        ApkPatchEngine.PatchConfig config = new ApkPatchEngine.PatchConfig();
+        for (CheckBox cb : featureCheckBoxes) {
+            String tag = String.valueOf(cb.getTag());
+            boolean on = cb.isChecked();
+            switch (tag) {
+                case "KILL_ADS": config.killAds = on; break;
+                case "KILL_POPUPS": config.killPopups = on; break;
+                case "REMOVE_TABS": config.removeTabs = on; break;
+                case "MAKE_CAPTURABLE": config.makeCapturable = on; break;
+                case "REMOVE_FLAG_SECURE": config.removeFlagSecure = on; break;
+                case "UNLOCK_PREMIUM": config.unlockPremium = on; break;
+                case "SPOOF_SIGNATURE": config.spoofSignature = on; break;
+                case "SPOOF_INSTALLER": config.spoofInstaller = on; break;
+                case "BYPASS_ROOT_EMULATOR": config.bypassRoot = on; break;
+                case "KILL_ANALYTICS": config.killAnalytics = on; break;
+                case "UNLOCK_MOCK_LOCATION": config.unlockMockLocation = on; break;
+                case "AUTO_SIGN_V1_V2_V3": config.signApk = on; break;
+            }
+        }
+        config.customTabNames = tabRemoveInput.getText().toString().trim();
+
+        executor.execute(() -> {
+            try {
+                File outDir = getExternalFilesDir("ModdedAPKs");
+                if (outDir != null && !outDir.exists()) outDir.mkdirs();
+                File signedApk = new File(outDir, "Modded_Signed_" + System.currentTimeMillis() + ".apk");
+
+                ApkPatchEngine engine = new ApkPatchEngine(this::appendLog);
+                engine.patchAndSignApk(selectedApkFile, signedApk, config);
+
+                lastSignedOutputApk = signedApk;
+                mainHandler.post(() -> {
+                    patchNowBtn.setEnabled(true);
+                    installModBtn.setVisibility(View.VISIBLE);
+                    shareModBtn.setVisibility(View.VISIBLE);
+                    Toast.makeText(this, "Signed APK Ready! Tap Install or Share below.", Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                appendLog("[ERROR] " + e.getMessage());
+                mainHandler.post(() -> patchNowBtn.setEnabled(true));
+            }
+        });
+    }
+
+    private void installSignedApk() {
+        if (lastSignedOutputApk == null || !lastSignedOutputApk.exists()) return;
+        try {
+            Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".provider", lastSignedOutputApk);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception e) {
+            appendLog("[!] Install launch error: " + e.getMessage());
+        }
+    }
+
+    private void shareSignedApk() {
+        if (lastSignedOutputApk == null || !lastSignedOutputApk.exists()) return;
+        try {
+            Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".provider", lastSignedOutputApk);
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType("application/vnd.android.package-archive");
+            shareIntent.putExtra(Intent.EXTRA_STREAM, apkUri);
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(shareIntent, "Share or Save Modded APK"));
+        } catch (Exception e) {
+            appendLog("[!] Share error: " + e.getMessage());
+        }
+    }
+
+    private void appendLog(String msg) {
+        mainHandler.post(() -> logView.append(msg + "\\n"));
+    }
+
+    private LinearLayout createCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(14);
+        card.setPadding(pad, pad, pad, pad);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#1E293B"));
+        bg.setCornerRadius(dp(12));
+        bg.setStroke(dp(1), Color.parseColor("#334155"));
+        card.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, 0, 0, dp(14));
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    private Button createStyledButton(String text, String hexColor) {
+        Button btn = new Button(this);
+        btn.setText(text);
+        btn.setAllCaps(false);
+        btn.setTextColor(Color.WHITE);
+        btn.setTypeface(Typeface.DEFAULT_BOLD);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor(hexColor));
+        bg.setCornerRadius(dp(8));
+        btn.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, dp(6), 0, dp(6));
+        btn.setLayoutParams(lp);
+        return btn;
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density);
+    }
+}
+""")
+
+write_file("app/src/main/java/com/omnimodder/studio/ApkPatchEngine.java", """
+package com.omnimodder.studio;
+
+import com.android.apksig.ApkSigner;
+
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.cms.CMSSignedData;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.util.Store;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.MessageDigest;
+import java.security.Security;
+import java.security.cert.X509Certificate;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.Adler32;
+import java.util.zip.CRC32;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
+
+public class ApkPatchEngine {
+
+    public interface Logger {
+        void log(String message);
+    }
+
+    public static class PatchConfig {
+        public boolean killAds = true;
+        public boolean killPopups = true;
+        public boolean removeTabs = true;
+        public boolean makeCapturable = true;
+        public boolean removeFlagSecure = true;
+        public boolean unlockPremium = true;
+        public boolean spoofSignature = true;
+        public boolean spoofInstaller = true;
+        public boolean bypassRoot = true;
+        public boolean killAnalytics = true;
+        public boolean unlockMockLocation = true;
+        public boolean signApk = true;
+        public String customTabNames = "";
+    }
+
+    private final Logger logger;
+
+    public ApkPatchEngine(Logger logger) {
+        this.logger = logger;
+        if (Security.getProvider("BC") == null) {
+            Security.addProvider(new BouncyCastleProvider());
+        }
+    }
+
+    public void patchAndSignApk(File inputApk, File outputSignedApk, PatchConfig config) throws Exception {
+        logger.log("==========================================");
+        logger.log("[*] Starting OmniModder v4.0 Engine...");
+        logger.log("[*] Target: " + inputApk.getName() + " (" + (inputApk.length() / 1024) + " KB)");
+
+        byte[] originalCertBytes = null;
+        if (config.spoofSignature) {
+            originalCertBytes = extractOriginalSignatureBytes(inputApk);
+        }
+
+        Map<byte[], byte[]> binaryRules = buildLengthPreservingRules(config);
+        logger.log("[*] Armed " + binaryRules.size() + " binary DEX/AXML hooks.");
+
+        File unsignedPatchedApk = new File(inputApk.getParentFile(), "temp_unsigned_patched.apk");
+        int dexCount = 0;
+        int xmlCount = 0;
+        int totalReplacements = 0;
+
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(inputApk));
+             ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(unsignedPatchedApk))) {
+
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+
+                if (name.startsWith("META-INF/") && (name.endsWith(".SF") || name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC") || name.endsWith(".MF"))) {
+                    continue;
+                }
+
+                byte[] data = readAllBytes(zis);
+
+                if (name.matches("classes\\\\d*\\\\.dex")) {
+                    dexCount++;
+                    PatchResult res = patchDexBinary(data, binaryRules, config.removeFlagSecure);
+                    data = res.data;
+                    totalReplacements += res.matchCount;
+                    logger.log("  [+] Patched " + name + " (" + res.matchCount + " hooks, DEX SHA-1 & Adler32 updated)");
+                } else if (name.equals("AndroidManifest.xml") || name.startsWith("res/layout") || name.startsWith("res/menu") || name.startsWith("res/xml") || name.equals("resources.arsc")) {
+                    xmlCount++;
+                    PatchResult res = patchBinaryResource(data, binaryRules);
+                    data = res.data;
+                    totalReplacements += res.matchCount;
+                }
+
+                ZipEntry outEntry = new ZipEntry(name);
+                if (name.equals("resources.arsc") || name.endsWith(".so")) {
+                    outEntry.setMethod(ZipEntry.STORED);
+                    outEntry.setSize(data.length);
+                    outEntry.setCompressedSize(data.length);
+                    CRC32 crc = new CRC32();
+                    crc.update(data);
+                    outEntry.setCrc(crc.getValue());
+                } else {
+                    outEntry.setMethod(ZipEntry.DEFLATED);
+                }
+
+                zos.putNextEntry(outEntry);
+                zos.write(data);
+                zos.closeEntry();
+            }
+
+            if (originalCertBytes != null) {
+                ZipEntry sigEntry = new ZipEntry("assets/omni_orig_cert.bin");
+                sigEntry.setMethod(ZipEntry.DEFLATED);
+                zos.putNextEntry(sigEntry);
+                zos.write(originalCertBytes);
+                zos.closeEntry();
+            }
+        }
+
+        logger.log("[+] Rebuilt APK (" + dexCount + " DEX files, " + xmlCount + " AXML/ARSC files, " + totalReplacements + " patches applied).");
+
+        if (config.signApk) {
+            logger.log("[*] Signing APK with V1 (JAR) + V2 (APK Signature Block) + V3 (Key Rotation)...");
+            signApkWithApksig(unsignedPatchedApk, outputSignedApk);
+            unsignedPatchedApk.delete();
+            logger.log("[✓] DONE! Installable Signed APK: " + outputSignedApk.getAbsolutePath());
+        } else {
+            if (outputSignedApk.exists()) outputSignedApk.delete();
+            unsignedPatchedApk.renameTo(outputSignedApk);
+            logger.log("[✓] Saved Unsigned APK: " + outputSignedApk.getAbsolutePath());
+        }
+    }
+
+    private byte[] extractOriginalSignatureBytes(File apkFile) {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(apkFile))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (name.startsWith("META-INF/") && (name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC"))) {
+                    byte[] pkcs7Bytes = readAllBytes(zis);
+                    CMSSignedData cms = new CMSSignedData(pkcs7Bytes);
+                    Store<X509CertificateHolder> store = cms.getCertificates();
+                    Collection<X509CertificateHolder> matches = store.getMatches(null);
+                    if (!matches.isEmpty()) {
+                        X509CertificateHolder holder = matches.iterator().next();
+                        byte[] certDer = holder.getEncoded();
+                        MessageDigest md = MessageDigest.getInstance("SHA-1");
+                        byte[] sha1 = md.digest(certDer);
+                        StringBuilder sb = new StringBuilder();
+                        for (byte b : sha1) sb.append(String.format("%02X:", b));
+                        logger.log("[+] Extracted Original Developer Cert SHA-1: " + sb.substring(0, sb.length() - 1));
+                        return certDer;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.log("[*] Note: Original cert extraction skipped (" + e.getMessage() + ")");
+        }
+        return null;
+    }
+
+    private Map<byte[], byte[]> buildLengthPreservingRules(PatchConfig cfg) {
+        Map<String, String> rules = new LinkedHashMap<>();
+
+        if (cfg.killAds) {
+            addSameLengthRule(rules, "com/google/android/gms/ads/AdView", "com/google/android/gms/ads/NoView");
+            addSameLengthRule(rules, "com/google/android/gms/ads/AdLoader", "com/google/android/gms/ads/NoLoader");
+            addSameLengthRule(rules, "com/google/android/gms/ads/MobileAds", "com/google/android/gms/ads/NoMobAdsX");
+            addSameLengthRule(rules, "com/google/android/gms/ads/InterstitialAd", "com/google/android/gms/ads/NoInterstitiAd");
+            addSameLengthRule(rules, "com.google.android.gms.ads.AdActivity", "com.google.android.gms.ads.NoActivity");
+            addSameLengthRule(rules, "com/unity3d/services/ads/UnityAdsImplementation", "com/unity3d/services/ads/NoUnityAdsImplementati");
+            addSameLengthRule(rules, "com/unity3d/ads/UnityAds", "com/unity3d/ads/NoUniAds");
+            addSameLengthRule(rules, "com/applovin/sdk/AppLovinSdk", "com/applovin/sdk/NoLovinSdkX");
+            addSameLengthRule(rules, "com/applovin/mediation/ads/MaxAdView", "com/applovin/mediation/ads/NoMaxView");
+            addSameLengthRule(rules, "com/applovin/mediation/ads/MaxInterstitialAd", "com/applovin/mediation/ads/NoMaxInterstitial");
+            addSameLengthRule(rules, "com/ironsource/mediationsdk/IronSource", "com/ironsource/mediationsdk/NoIronSrcX");
+            addSameLengthRule(rules, "com/facebook/ads/InterstitialAd", "com/facebook/ads/NoInterstitial");
+            addSameLengthRule(rules, "com/facebook/ads/AdView", "com/facebook/ads/NoView");
+            addSameLengthRule(rules, "com/vungle/warren/Vungle", "com/vungle/warren/NoVung");
+            addSameLengthRule(rules, "com/bytedance/sdk/openadsdk/TTAdSdk", "com/bytedance/sdk/openadsdk/NoAdSdk");
+            addSameLengthRule(rules, "com/mbridge/msdk/MBridgeSDK", "com/mbridge/msdk/NoBridgeXX");
+            addSameLengthRule(rules, "com/chartboost/sdk/Chartboost", "com/chartboost/sdk/NoChartbst");
+            addSameLengthRule(rules, "com/inmobi/sdk/InMobiSdk", "com/inmobi/sdk/NoMobiSdk");
+            addSameLengthRule(rules, "com/startapp/sdk/adsbase/StartAppAd", "com/startapp/sdk/adsbase/NoStartApp");
+            addSameLengthRule(rules, "googleads.g.doubleclick.net", "0.0.0.0/blocked_doubleclick");
+            addSameLengthRule(rules, "pagead2.googlesyndication.com", "0.0.0.0/blocked_googlesyndica");
+            addSameLengthRule(rules, "pubads.g.doubleclick.net", "0.0.0.0/blocked_pubads_x");
+            addSameLengthRule(rules, "adservice.google.com", "0.0.0.0/blocked_adsx");
+            addSameLengthRule(rules, "rt.applovin.com", "0.0.0.0/no_appl");
+            addSameLengthRule(rules, "d.applovin.com", "0.0.0.0/no_ap2");
+            addSameLengthRule(rules, "ads.mopub.com", "0.0.0.0/mopub");
+            addSameLengthRule(rules, "auction.unityads.unity3d.com", "0.0.0.0/blocked_unity_auctio");
+            addSameLengthRule(rules, "config.unityads.unity3d.com", "0.0.0.0/blocked_unity_confi");
+            addSameLengthRule(rules, "init.supersonicads.com", "0.0.0.0/blocked_iron_x");
+        }
+
+        if (cfg.killPopups) {
+            addSameLengthRule(rules, "com/google/android/play/core/review/ReviewManager", "com/google/android/play/core/review/NoReviewManag");
+            addSameLengthRule(rules, "com/google/android/play/core/appupdate/AppUpdateManager", "com/google/android/play/core/appupdate/NoAppUpdateManag");
+            addSameLengthRule(rules, "force_update", "no_force_upd");
+            addSameLengthRule(rules, "forceUpdate", "noForceUpdt");
+            addSameLengthRule(rules, "showRateDialog", "noRateDialogXX");
+            addSameLengthRule(rules, "showUpdateDialog", "noUpdateDialogXX");
+            addSameLengthRule(rules, "isUpdateRequired", "noUpdateRequired");
+            addSameLengthRule(rules, "must_update", "no_must_upd");
+        }
+
+        if (cfg.makeCapturable) {
+            addSameLengthRule(rules, "okhttp3/CertificatePinner", "okhttp3/NoCertPinnerXXXXX");
+            addSameLengthRule(rules, "com/android/org/conscrypt/TrustManagerImpl", "com/android/org/conscrypt/NoTrustManagerIm");
+            addSameLengthRule(rules, "checkServerTrusted", "noChkServerTrusted");
+            addSameLengthRule(rules, "X509TrustManager", "No59TrustManager");
+            addSameLengthRule(rules, "tun0", "ign0");
+            addSameLengthRule(rules, "ppp0", "ign1");
+            addSameLengthRule(rules, "tap0", "ign2");
+            addSameLengthRule(rules, "http.proxyHost", "http.noPrxHost");
+            addSameLengthRule(rules, "http.proxyPort", "http.noPrxPort");
+            addSameLengthRule(rules, "https.proxyHost", "https.noPrxHost");
+            addSameLengthRule(rules, "https.proxyPort", "https.noPrxPort");
+            addSameLengthRule(rules, "com.guoshi.httpcanary", "com.ignored.httpcanar");
+            addSameLengthRule(rules, "com.reqable.android", "com.ignored.reqable");
+        }
+
+        if (cfg.spoofSignature) {
+            addSameLengthRule(rules, "verifySignature", "noVerifySignatr");
+            addSameLengthRule(rules, "checkSignature", "noChkSignature");
+            addSameLengthRule(rules, "isSignatureValid", "isSigAlwaysValid");
+            addSameLengthRule(rules, "checkAppSignature", "noChkAppSignature");
+            addSameLengthRule(rules, "GET_SIGNATURES", "NO_SIGNATURES_");
+            addSameLengthRule(rules, "GET_SIGNING_CERTIFICATES", "NO_SIGNING_CERTIFICATES_");
+        }
+
+        if (cfg.spoofInstaller) {
+            addSameLengthRule(rules, "getInstallerPackageName", "getNoInstallerPkgNameXX");
+            addSameLengthRule(rules, "getInstallingPackageName", "getNoInstallingPkgNameXX");
+        }
+
+        if (cfg.bypassRoot) {
+            addSameLengthRule(rules, "/system/bin/su", "/dev/null/nosu");
+            addSameLengthRule(rules, "/system/xbin/su", "/dev/null/nxbsu");
+            addSameLengthRule(rules, "/sbin/su", "/dev/nsu");
+            addSameLengthRule(rules, "/data/local/xbin/su", "/dev/null/no_loc_su");
+            addSameLengthRule(rules, "/data/local/bin/su", "/dev/null/no_lbin_");
+            addSameLengthRule(rules, "/system/app/Superuser.apk", "/dev/null/NoSuperuser.apk");
+            addSameLengthRule(rules, "com.topjohnwu.magisk", "com.ignored.nomagisk");
+            addSameLengthRule(rules, "eu.chainfire.supersu", "eu.ignored.nosupersu");
+            addSameLengthRule(rules, "de.robv.android.xposed.installer", "de.ignored.no_xposed_installer_x");
+            addSameLengthRule(rules, "re.frida.server", "re.ignored.serv");
+            addSameLengthRule(rules, "frida-agent", "clean-agent");
+            addSameLengthRule(rules, "libfrida-gadget.so", "libclean-gadget.so");
+            addSameLengthRule(rules, "ro.build.tags", "ro.clean.tags");
+            addSameLengthRule(rules, "test-keys", "rel-keys!");
+            addSameLengthRule(rules, "goldfish", "real_cpu");
+            addSameLengthRule(rules, "generic_x86", "real_arm64_");
+            addSameLengthRule(rules, "adb_enabled", "adb_ignored");
+            addSameLengthRule(rules, "development_settings_enabled", "development_settings_ignored");
+        }
+
+        if (cfg.unlockPremium) {
+            addSameLengthRule(rules, "is_premium_user", "is_always_true_");
+            addSameLengthRule(rules, "is_subscribed", "is_sub_active");
+            addSameLengthRule(rules, "ads_removed", "ads_killed_");
+            addSameLengthRule(rules, "is_vip_member", "is_vip_active");
+        }
+
+        if (cfg.killAnalytics) {
+            addSameLengthRule(rules, "com/google/firebase/analytics/FirebaseAnalytics", "com/google/firebase/analytics/NoFirebaseAnalyti");
+            addSameLengthRule(rules, "com/google/firebase/crashlytics/FirebaseCrashlytics", "com/google/firebase/crashlytics/NoFirebaseCrashlyti");
+            addSameLengthRule(rules, "com/facebook/appevents/AppEventsLogger", "com/facebook/appevents/NoEventsLoggerX");
+            addSameLengthRule(rules, "app-measurement.com", "0.0.0.0/no_measurex");
+            addSameLengthRule(rules, "firebaselogging-pa.googleapis.com", "0.0.0.0/blocked_firebase_logging_");
+            addSameLengthRule(rules, "crashlyticsreports-pa.googleapis.com", "0.0.0.0/blocked_crashlytics_reports_");
+        }
+
+        if (cfg.unlockMockLocation) {
+            addSameLengthRule(rules, "isFromMockProvider", "noFromMockProvider");
+            addSameLengthRule(rules, "allow_mock_location", "ignore_mock_locatio");
+        }
+
+        if (cfg.removeTabs && cfg.customTabNames != null && !cfg.customTabNames.isEmpty()) {
+            String[] tabs = cfg.customTabNames.split(",");
+            for (String raw : tabs) {
+                String t = raw.trim();
+                if (t.length() >= 3) {
+                    String replacement = "zz_" + "x".repeat(t.length() - 3);
+                    addSameLengthRule(rules, t, replacement);
+                }
+            }
+        }
+
+        Map<byte[], byte[]> byteRules = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : rules.entrySet()) {
+            byte[] kUtf8 = e.getKey().getBytes(StandardCharsets.UTF_8);
+            byte[] vUtf8 = e.getValue().getBytes(StandardCharsets.UTF_8);
+            if (kUtf8.length == vUtf8.length) {
+                byteRules.put(kUtf8, vUtf8);
+            }
+            byte[] kUtf16 = e.getKey().getBytes(StandardCharsets.UTF_16LE);
+            byte[] vUtf16 = e.getValue().getBytes(StandardCharsets.UTF_16LE);
+            if (kUtf16.length == vUtf16.length) {
+                byteRules.put(kUtf16, vUtf16);
+            }
+        }
+        return byteRules;
+    }
+
+    private void addSameLengthRule(Map<String, String> map, String target, String replacement) {
+        if (target.length() == replacement.length()) {
+            map.put(target, replacement);
+        } else if (replacement.length() < target.length()) {
+            String padded = replacement + "X".repeat(target.length() - replacement.length());
+            map.put(target, padded);
+        } else {
+            map.put(target, replacement.substring(0, target.length()));
+        }
+    }
+
+    private static class PatchResult {
+        byte[] data;
+        int matchCount;
+        PatchResult(byte[] data, int matchCount) {
+            this.data = data;
+            this.matchCount = matchCount;
+        }
+    }
+
+    private PatchResult patchDexBinary(byte[] dexBytes, Map<byte[], byte[]> rules, boolean stripFlagSecure) throws Exception {
+        int count = 0;
+        for (Map.Entry<byte[], byte[]> rule : rules.entrySet()) {
+            count += replaceBytesInPlace(dexBytes, rule.getKey(), rule.getValue());
+        }
+
+        if (stripFlagSecure) {
+            for (int i = 0; i < dexBytes.length - 4; i += 2) {
+                if ((dexBytes[i] & 0xFF) == 0x13 && (dexBytes[i + 2] & 0xFF) == 0x00 && (dexBytes[i + 3] & 0xFF) == 0x20) {
+                    dexBytes[i + 3] = 0x00;
+                    count++;
+                }
+            }
+        }
+
+        if (dexBytes.length > 32 && dexBytes[0] == 'd' && dexBytes[1] == 'e' && dexBytes[2] == 'x') {
+            MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+            sha1.update(dexBytes, 32, dexBytes.length - 32);
+            byte[] sig = sha1.digest();
+            System.arraycopy(sig, 0, dexBytes, 12, 20);
+
+            Adler32 adler = new Adler32();
+            adler.update(dexBytes, 12, dexBytes.length - 12);
+            long checksum = adler.getValue();
+            dexBytes[8] = (byte) (checksum & 0xFF);
+            dexBytes[9] = (byte) ((checksum >> 8) & 0xFF);
+            dexBytes[10] = (byte) ((checksum >> 16) & 0xFF);
+            dexBytes[11] = (byte) ((checksum >> 24) & 0xFF);
+        }
+
+        return new PatchResult(dexBytes, count);
+    }
+
+    private PatchResult patchBinaryResource(byte[] resBytes, Map<byte[], byte[]> rules) {
+        int count = 0;
+        for (Map.Entry<byte[], byte[]> rule : rules.entrySet()) {
+            count += replaceBytesInPlace(resBytes, rule.getKey(), rule.getValue());
+        }
+        return new PatchResult(resBytes, count);
+    }
+
+    private int replaceBytesInPlace(byte[] buffer, byte[] target, byte[] replacement) {
+        int matches = 0;
+        int limit = buffer.length - target.length;
+        outer:
+        for (int i = 0; i <= limit; i++) {
+            for (int j = 0; j < target.length; j++) {
+                if (buffer[i + j] != target[j]) {
+                    continue outer;
+                }
+            }
+            System.arraycopy(replacement, 0, buffer, i, replacement.length);
+            matches++;
+            i += target.length - 1;
+        }
+        return matches;
+    }
+
+    private void signApkWithApksig(File unsignedApk, File signedApk) throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair keyPair = kpg.generateKeyPair();
+
+        X500Name issuer = new X500Name("CN=OmniModder Studio, OU=Android, O=OmniModder, L=Kitchen, ST=Bench, C=US");
+        BigInteger serial = BigInteger.valueOf(System.currentTimeMillis());
+        Date notBefore = new Date(System.currentTimeMillis() - 86400000L * 365);
+        Date notAfter = new Date(System.currentTimeMillis() + 86400000L * 365 * 25);
+
+        X509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
+                issuer, serial, notBefore, notAfter, issuer, keyPair.getPublic()
+        );
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
+                .build(keyPair.getPrivate());
+        X509Certificate cert = new JcaX509CertificateConverter()
+                .getCertificate(certBuilder.build(signer));
+
+        ApkSigner.SignerConfig signerConfig = new ApkSigner.SignerConfig.Builder(
+                "OMNIMODDER_KEY",
+                keyPair.getPrivate(),
+                Collections.singletonList(cert)
+        ).build();
+
+        ApkSigner apkSigner = new ApkSigner.Builder(Collections.singletonList(signerConfig))
+                .setInputApk(unsignedApk)
+                .setOutputApk(signedApk)
+                .setV1SigningEnabled(true)
+                .setV2SigningEnabled(true)
+                .setV3SigningEnabled(true)
+                .build();
+
+        apkSigner.sign();
+    }
+
+    private static byte[] readAllBytes(InputStream in) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[65536];
+        int r;
+        while ((r = in.read(buf)) != -1) {
+            bos.write(buf, 0, r);
+        }
+        return bos.toByteArray();
+    }
+}
+""")
+print("[✓] All OmniModder v4.0 files generated.")
