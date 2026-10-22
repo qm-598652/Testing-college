@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-android-modder-app:
     runs-on: ubuntu-latest
@@ -19,412 +22,38 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Accept Android SDK Licenses & Install SDK 34
+      - name: Generate Full Android Project via Python
+        run: python3 setup_project.py
+
+      - name: Install Android SDK 34 & Build Tools
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Auto-Generate Exact Project Tree & All Source Files (Zero Path Errors)
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Compile OmniModder Studio APK
         run: |
-          mkdir -p app/src/main/java/com/omnimodder/studio
-          mkdir -p app/src/main/res/xml
-          mkdir -p app/src/main/res/drawable
+          gradle assembleDebug -Pandroid.useAndroidX=true -Pandroid.enableJetifier=true --no-daemon --stacktrace
+          mkdir -p release_apk
+          cp app/build/outputs/apk/debug/app-debug.apk release_apk/OmniModder-Studio-v4.0.apk
+          ls -lh release_apk/OmniModder-Studio-v4.0.apk
+          $ANDROID_HOME/build-tools/34.0.0/aapt dump badging release_apk/OmniModder-Studio-v4.0.apk | grep -E "package:|launchable-activity:"
 
-          cat << 'EOF' > gradle.properties
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.enableJetifier=true
-          android.nonTransitiveRClass=true
-          EOF
+      - name: Upload APK to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmniModder-Studio-v4.0-APK
+          path: release_apk/OmniModder-Studio-v4.0.apk
+          if-no-files-found: error
 
-          cat << 'EOF' > settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "OmniModderStudio"
-          include ':app'
-          EOF
-
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.3.2' apply false
-          }
-          EOF
-
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-
-          android {
-              namespace 'com.omnimodder.studio'
-              compileSdk 34
-
-              defaultConfig {
-                  applicationId "com.omnimodder.studio"
-                  minSdk 26
-                  targetSdk 34
-                  versionCode 30
-                  versionName "3.0-PRO"
-              }
-
-              buildTypes {
-                  debug {
-                      minifyEnabled false
-                  }
-                  release {
-                      minifyEnabled false
-                      signingConfig signingConfigs.debug
-                  }
-              }
-
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-
-              packaging {
-                  resources {
-                      excludes += '/META-INF/{AL2.0,LGPL2.1,DEPENDENCIES,LICENSE*,NOTICE*}'
-                      excludes += 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
-                      pickFirsts += '**/*.RSA'
-                      pickFirsts += '**/*.SF'
-                  }
-              }
-          }
-
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'com.google.android.material:material:1.11.0'
-              implementation 'com.android.tools.build:apksig:8.3.2'
-              implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
-              implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
-          }
-          EOF
-
-          cat << 'EOF' > app/src/main/res/drawable/ic_launcher.xml
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
-              <path
-                  android:fillColor="#0F172A"
-                  android:pathData="M0,0h108v108h-108z"/>
-              <path
-                  android:fillColor="#22C55E"
-                  android:pathData="M60,18L28,60h24l-8,30l36,-44H56L60,18z"/>
-          </vector>
-          EOF
-
-          cat << 'EOF' > app/src/main/res/xml/file_paths.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <paths>
-              <external-files-path name="modded_apks" path="." />
-              <external-path name="external_downloads" path="." />
-              <cache-path name="cache_apks" path="." />
-              <files-path name="internal_apks" path="." />
-          </paths>
-          EOF
-
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools">
-
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-              <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
-
-              <application
-                  android:allowBackup="true"
-                  android:icon="@drawable/ic_launcher"
-                  android:roundIcon="@drawable/ic_launcher"
-                  android:label="OmniModder Studio"
-                  android:supportsRtl="true"
-                  android:usesCleartextTraffic="true"
-                  android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
-
-                  <activity
-                      android:name="com.omnimodder.studio.MainActivity"
-                      android:label="OmniModder Studio"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:windowSoftInputMode="adjustResize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-
-                  <provider
-                      android:name="androidx.core.content.FileProvider"
-                      android:authorities="${applicationId}.provider"
-                      android:exported="false"
-                      android:grantUriPermissions="true">
-                      <meta-data
-                          android:name="android.support.FILE_PROVIDER_PATHS"
-                          android:resource="@xml/file_paths" />
-                  </provider>
-              </application>
-          </manifest>
-          EOF
-
-          cat << 'EOF' > app/src/main/java/com/omnimodder/studio/MainActivity.java
-          package com.omnimodder.studio;
-
-          import android.app.AlertDialog;
-          import android.content.Intent;
-          import android.content.pm.ApplicationInfo;
-          import android.content.pm.PackageInfo;
-          import android.content.pm.PackageManager;
-          import android.graphics.Color;
-          import android.graphics.Typeface;
-          import android.graphics.drawable.GradientDrawable;
-          import android.net.Uri;
-          import android.os.Bundle;
-          import android.os.Handler;
-          import android.os.Looper;
-          import android.view.View;
-          import android.view.ViewGroup;
-          import android.widget.Button;
-          import android.widget.CheckBox;
-          import android.widget.EditText;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-          import android.widget.Toast;
-
-          import androidx.activity.result.ActivityResultLauncher;
-          import androidx.activity.result.contract.ActivityResultContracts;
-          import androidx.appcompat.app.AppCompatActivity;
-          import androidx.core.content.FileProvider;
-
-          import java.io.File;
-          import java.io.FileInputStream;
-          import java.io.FileOutputStream;
-          import java.io.InputStream;
-          import java.net.HttpURLConnection;
-          import java.net.URL;
-          import java.util.ArrayList;
-          import java.util.Collections;
-          import java.util.List;
-          import java.util.concurrent.ExecutorService;
-          import java.util.concurrent.Executors;
-
-          public class MainActivity extends AppCompatActivity {
-
-              private File selectedApkFile;
-              private TextView selectedFileLabel;
-              private TextView apkInspectorLabel;
-              private TextView logView;
-              private EditText urlInput;
-              private EditText tabRemoveInput;
-              private Button patchNowBtn;
-              private Button installModBtn;
-              private Button shareModBtn;
-              private File lastSignedOutputApk;
-
-              private final List<CheckBox> featureCheckBoxes = new ArrayList<>();
-              private final ExecutorService executor = Executors.newSingleThreadExecutor();
-              private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
-              private final ActivityResultLauncher<String> galleryApkPicker =
-                      registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
-                          if (uri != null) {
-                              copyUriToWorkspace(uri);
-                          }
-                      });
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  ScrollView scrollView = new ScrollView(this);
-                  scrollView.setBackgroundColor(Color.parseColor("#0F172A"));
-                  scrollView.setFillViewport(true);
-
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  int pad = dp(16);
-                  root.setPadding(pad, pad, pad, pad);
-                  scrollView.addView(root);
-
-                  TextView title = new TextView(this);
-                  title.setText("⚡ OmniModder Studio v3.0-PRO");
-                  title.setTextColor(Color.parseColor("#22C55E"));
-                  title.setTextSize(22f);
-                  title.setTypeface(Typeface.DEFAULT_BOLD);
-                  root.addView(title);
-
-                  TextView subtitle = new TextView(this);
-                  subtitle.setText("Standalone On-Device APK Modder, Ad/Popup Killer, SSL Unpinner, Signature Spoofer & V1/V2/V3 Signer");
-                  subtitle.setTextColor(Color.parseColor("#94A3B8"));
-                  subtitle.setTextSize(12.5f);
-                  subtitle.setPadding(0, dp(4), 0, dp(14));
-                  root.addView(subtitle);
-
-                  // Card 1: Input APK Selection & Inspector
-                  LinearLayout sourceCard = createCard();
-                  root.addView(sourceCard);
-
-                  selectedFileLabel = new TextView(this);
-                  selectedFileLabel.setText("Target APK: None selected");
-                  selectedFileLabel.setTextColor(Color.parseColor("#F8FAFC"));
-                  selectedFileLabel.setTypeface(Typeface.DEFAULT_BOLD);
-                  selectedFileLabel.setPadding(0, 0, 0, dp(4));
-                  sourceCard.addView(selectedFileLabel);
-
-                  apkInspectorLabel = new TextView(this);
-                  apkInspectorLabel.setText("Package Info: Pick an APK below to inspect package, SDK & cert.");
-                  apkInspectorLabel.setTextColor(Color.parseColor("#38BDF8"));
-                  apkInspectorLabel.setTextSize(11.5f);
-                  apkInspectorLabel.setPadding(0, 0, 0, dp(10));
-                  sourceCard.addView(apkInspectorLabel);
-
-                  Button pickStorageBtn = createStyledButton("📂 Pick APK from Phone Gallery / Storage", "#3B82F6");
-                  pickStorageBtn.setOnClickListener(v -> galleryApkPicker.launch("*/*"));
-                  sourceCard.addView(pickStorageBtn);
-
-                  Button pickInstalledBtn = createStyledButton("📱 Pick from Installed Apps on Phone", "#8B5CF6");
-                  pickInstalledBtn.setOnClickListener(v -> showInstalledAppsDialog());
-                  sourceCard.addView(pickInstalledBtn);
-
-                  urlInput = new EditText(this);
-                  urlInput.setHint("Or paste Direct APK URL (https://.../app.apk)");
-                  urlInput.setHintTextColor(Color.parseColor("#64748B"));
-                  urlInput.setTextColor(Color.WHITE);
-                  urlInput.setSingleLine(true);
-                  sourceCard.addView(urlInput);
-
-                  Button fetchUrlBtn = createStyledButton("🌐 Download APK from Direct Link", "#0EA5E9");
-                  fetchUrlBtn.setOnClickListener(v -> downloadApkFromUrl(urlInput.getText().toString().trim()));
-                  sourceCard.addView(fetchUrlBtn);
-
-                  // Card 2: Custom Tab / Button Remover
-                  LinearLayout tabCard = createCard();
-                  root.addView(tabCard);
-
-                  TextView tabTitle = new TextView(this);
-                  tabTitle.setText("✂️ Remove Any Tab / Button / View IDs");
-                  tabTitle.setTextColor(Color.parseColor("#38BDF8"));
-                  tabTitle.setTypeface(Typeface.DEFAULT_BOLD);
-                  tabCard.addView(tabTitle);
-
-                  tabRemoveInput = new EditText(this);
-                  tabRemoveInput.setHint("Comma-separated IDs (e.g. tab_shop, nav_ads, btn_vip)");
-                  tabRemoveInput.setHintTextColor(Color.parseColor("#64748B"));
-                  tabRemoveInput.setTextColor(Color.WHITE);
-                  tabRemoveInput.setText("ad_view,ad_container,banner_ad,tab_shop,btn_upgrade,vip_tab");
-                  tabCard.addView(tabRemoveInput);
-
-                  // Card 3: 100+ Modding Features Checkboxes
-                  LinearLayout featuresCard = createCard();
-                  root.addView(featuresCard);
-
-                  TextView featHeader = new TextView(this);
-                  featHeader.setText("🛠️ Active Patch Modules (100+ Hooks)");
-                  featHeader.setTextColor(Color.parseColor("#22C55E"));
-                  featHeader.setTypeface(Typeface.DEFAULT_BOLD);
-                  featHeader.setPadding(0, 0, 0, dp(6));
-                  featuresCard.addView(featHeader);
-
-                  LinearLayout quickToggleRow = new LinearLayout(this);
-                  quickToggleRow.setOrientation(LinearLayout.HORIZONTAL);
-                  Button selectAllBtn = createStyledButton("Select All", "#334155");
-                  selectAllBtn.setOnClickListener(v -> {
-                      for (CheckBox cb : featureCheckBoxes) cb.setChecked(true);
-                  });
-                  Button clearAllBtn = createStyledButton("Clear All", "#334155");
-                  clearAllBtn.setOnClickListener(v -> {
-                      for (CheckBox cb : featureCheckBoxes) cb.setChecked(false);
-                  });
-                  LinearLayout.LayoutParams halfLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                  halfLp.setMargins(dp(4), 0, dp(4), dp(8));
-                  selectAllBtn.setLayoutParams(halfLp);
-                  clearAllBtn.setLayoutParams(halfLp);
-                  quickToggleRow.addView(selectAllBtn);
-                  quickToggleRow.addView(clearAllBtn);
-                  featuresCard.addView(quickToggleRow);
-
-                  String[][] modules = new String[][]{
-                          {"KILL_ADS", "1. Remove All Ads (AdMob, Unity, AppLovin, IronSource, Meta, Vungle, Pangle, Mintegral + 30 Ad Domains)"},
-                          {"KILL_POPUPS", "2. Kill Dialogs, Force-Update Prompts, Rate-Us & Consent Pop-ups"},
-                          {"REMOVE_TABS", "3. Remove Specified Tab Buttons, BottomNav Items & Banner Containers"},
-                          {"MAKE_CAPTURABLE", "4. Make APK Capturable (Bypass SSL Pinning, Trust User CAs, Hide VPN/Proxy/Reqable/Canary)"},
-                          {"REMOVE_FLAG_SECURE", "5. Remove Restrictions: Enable Screenshots & Screen Recording (Strip FLAG_SECURE)"},
-                          {"UNLOCK_PREMIUM", "6. Unlock Pro/VIP/Subscribed Boolean Checks & Mock Play Billing Success"},
-                          {"SPOOF_SIGNATURE", "7. Spoof Original Developer Signature / SHA-1 Hash & Bypass Tamper Checks"},
-                          {"SPOOF_INSTALLER", "8. Spoof Google Play Store Installer (com.android.vending)"},
-                          {"BYPASS_ROOT_EMULATOR", "9. Bypass Root, Magisk, Xposed, Frida, Emulator & ADB Debugging Checks"},
-                          {"KILL_ANALYTICS", "10. Disable Firebase Analytics, Crashlytics, Sentry & Facebook Telemetry"},
-                          {"UNLOCK_MOCK_LOCATION", "11. Bypass Mock Location Detection & Dual-Space/Clone Restrictions"},
-                          {"AUTO_SIGN_V1_V2_V3", "12. Sign APK with V1 (JAR) + V2 (Full Block) + V3 Cryptographic Signature"}
-                  };
-
-                  for (String[] mod : modules) {
-                      CheckBox cb = new CheckBox(this);
-                      cb.setTag(mod[0]);
-                      cb.setText(mod[1]);
-                      cb.setTextColor(Color.parseColor("#E2E8F0"));
-                      cb.setChecked(true);
-                      cb.setPadding(dp(4), dp(6), dp(4), dp(6));
-                      featuresCard.addView(cb);
-                      featureCheckBoxes.add(cb);
-                  }
-
-                  patchNowBtn = createStyledButton("🚀 PATCH & SIGN APK NOW (100+ MODS)", "#22C55E");
-                  patchNowBtn.setTextColor(Color.parseColor("#052E16"));
-                  patchNowBtn.setOnClickListener(v -> runPatchingPipeline());
-                  root.addView(patchNowBtn);
-
-                  installModBtn = createStyledButton("📲 INSTALL MODDED & SIGNED APK", "#F59E0B");
-                  installModBtn.setTextColor(Color.parseColor("#0F172A"));
-                  installModBtn.setVisibility(View.GONE);
-                  installModBtn.setOnClickListener(v -> installSignedApk());
-                  root.addView(installModBtn);
-
-                  shareModBtn = createStyledButton("📤 SHARE / SAVE MODDED APK", "#10B981");
-                  shareModBtn.setTextColor(Color.parseColor("#052E16"));
-                  shareModBtn.setVisibility(View.GONE);
-                  shareModBtn.setOnClickListener(v -> shareSignedApk());
-                  root.addView(shareModBtn);
-
-                  // Console Log Card
-                  LinearLayout logCard = createCard();
-                  root.addView(logCard);
-
-                  TextView logHeader = new TextView(this);
-                  logHeader.setText("📟 Live Patcher & Signer Console:");
-                  logHeader.setTextColor(Color.parseColor("#94A3B8"));
-                  logHeader.setTypeface(Typeface.DEFAULT_BOLD);
-                  logCard.addView(logHeader);
-
-                  logView = new TextView(this);
-                  logView.setTextColor(Color.parseColor("#4ADE80"));
-                  logView.setTypeface(Typeface.MONOSPACE);
-                  logView.setTextSize(11.5f);
-                  logView.setPadding(0, dp(8), 0, 0);
-                  logView.setText("[Ready] OmniModder v3.0 initialized. Pick any APK from Gallery, Installed Apps, or URL.\n");
-                  logCard.addView(logView);
-
-                  setContentView(scrollView);
-              }
-
-              private void inspectLoadedApk(File apkFile) {
-                  try {
-                      PackageManager pm = getPackageManager();
-                      PackageInfo inf
+      - name: Also Save APK Directly Into Repo (release_apk/ folder)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f release_apk/OmniModder-Studio-v4.0.apk
+          git commit -m "Auto-publish compiled OmniModder-Studio-v4.0.apk" || true
+          git push || true
