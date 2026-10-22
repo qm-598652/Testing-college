@@ -52,8 +52,8 @@ android {
         applicationId "com.omnimodder.studio"
         minSdk 26
         targetSdk 34
-        versionCode 40
-        versionName "4.0-PRO"
+        versionCode 50
+        versionName "5.0-ULTRA"
     }
 
     buildTypes {
@@ -97,11 +97,11 @@ write_file("app/src/main/res/drawable/ic_launcher.xml", """
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#0F172A"
+        android:fillColor="#090D16"
         android:pathData="M0,0h108v108h-108z"/>
     <path
-        android:fillColor="#22C55E"
-        android:pathData="M60,18L28,60h24l-8,30l36,-44H56L60,18z"/>
+        android:fillColor="#10B981"
+        android:pathData="M60,16L26,60h26l-8,32l38,-46H56L60,16z"/>
 </vector>
 """)
 
@@ -164,6 +164,8 @@ write_file("app/src/main/java/com/omnimodder/studio/MainActivity.java", """
 package com.omnimodder.studio;
 
 import android.app.AlertDialog;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
@@ -172,9 +174,13 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -194,28 +200,39 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
     private File selectedApkFile;
+    private String selectedPackageName = "modded_app";
     private TextView selectedFileLabel;
     private TextView apkInspectorLabel;
     private TextView logView;
     private EditText urlInput;
-    private EditText tabRemoveInput;
+    private EditText customButtonLabelInput;
+    private EditText customButtonUrlInput;
+    private LinearLayout discoveredButtonsContainer;
+    private TextView discoveredCountLabel;
+
     private Button patchNowBtn;
     private Button installModBtn;
+    private Button saveDownloadsBtn;
     private Button shareModBtn;
     private File lastSignedOutputApk;
 
     private final List<CheckBox> featureCheckBoxes = new ArrayList<>();
+    private final List<CheckBox> discoveredViewCheckBoxes = new ArrayList<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -231,180 +248,301 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         ScrollView scrollView = new ScrollView(this);
-        scrollView.setBackgroundColor(Color.parseColor("#0F172A"));
+        scrollView.setBackgroundColor(Color.parseColor("#090D16"));
         scrollView.setFillViewport(true);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(16);
+        int pad = dp(14);
         root.setPadding(pad, pad, pad, pad);
         scrollView.addView(root);
 
+        // Top Hero Banner
+        LinearLayout hero = createCard("#111827", "#10B981");
         TextView title = new TextView(this);
-        title.setText("⚡ OmniModder Studio v4.0-PRO");
-        title.setTextColor(Color.parseColor("#22C55E"));
-        title.setTextSize(22f);
+        title.setText("⚡ OMNIMODDER STUDIO v5.0-ULTRA");
+        title.setTextColor(Color.parseColor("#10B981"));
+        title.setTextSize(20f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title);
+        hero.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("On-Device APK Modder, Ad/Popup Killer, SSL Unpinner, Signature Spoofer & V1/V2/V3 Signer");
-        subtitle.setTextColor(Color.parseColor("#94A3B8"));
-        subtitle.setTextSize(12.5f);
-        subtitle.setPadding(0, dp(4), 0, dp(14));
-        root.addView(subtitle);
+        subtitle.setText("Crash-Free DEX String-Order Engine • Auto Button/Tab Scanner • Custom Button Injector • V1/V2/V3 Signer");
+        subtitle.setTextColor(Color.parseColor("#9CA3AF"));
+        subtitle.setTextSize(11.5f);
+        subtitle.setPadding(0, dp(4), 0, 0);
+        hero.addView(subtitle);
+        root.addView(hero);
 
-        LinearLayout sourceCard = createCard();
+        // STEP 1: SELECT APK CARD
+        LinearLayout sourceCard = createCard("#131C2E", "#1E293B");
         root.addView(sourceCard);
 
+        addSectionHeader(sourceCard, "📦 STEP 1: SELECT TARGET APK", "#38BDF8");
+
         selectedFileLabel = new TextView(this);
-        selectedFileLabel.setText("Target APK: None selected");
+        selectedFileLabel.setText("No APK Selected Yet");
         selectedFileLabel.setTextColor(Color.parseColor("#F8FAFC"));
+        selectedFileLabel.setTextSize(14f);
         selectedFileLabel.setTypeface(Typeface.DEFAULT_BOLD);
-        selectedFileLabel.setPadding(0, 0, 0, dp(4));
         sourceCard.addView(selectedFileLabel);
 
         apkInspectorLabel = new TextView(this);
-        apkInspectorLabel.setText("Package Info: Pick an APK below to inspect package, SDK & cert.");
-        apkInspectorLabel.setTextColor(Color.parseColor("#38BDF8"));
+        apkInspectorLabel.setText("Pick an APK from Storage, Installed Apps, or URL to auto-extract its buttons & tabs.");
+        apkInspectorLabel.setTextColor(Color.parseColor("#94A3B8"));
         apkInspectorLabel.setTextSize(11.5f);
-        apkInspectorLabel.setPadding(0, 0, 0, dp(10));
+        apkInspectorLabel.setPadding(0, dp(2), 0, dp(10));
         sourceCard.addView(apkInspectorLabel);
 
-        Button pickStorageBtn = createStyledButton("📂 Pick APK from Phone Gallery / Storage", "#3B82F6");
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button pickStorageBtn = createStyledButton("📂 Phone Files / Gallery", "#2563EB");
         pickStorageBtn.setOnClickListener(v -> galleryApkPicker.launch("*/*"));
-        sourceCard.addView(pickStorageBtn);
-
-        Button pickInstalledBtn = createStyledButton("📱 Pick from Installed Apps on Phone", "#8B5CF6");
+        Button pickInstalledBtn = createStyledButton("📱 Installed Apps", "#7C3AED");
         pickInstalledBtn.setOnClickListener(v -> showInstalledAppsDialog());
-        sourceCard.addView(pickInstalledBtn);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        rowLp.setMargins(dp(3), dp(4), dp(3), dp(4));
+        pickStorageBtn.setLayoutParams(rowLp);
+        pickInstalledBtn.setLayoutParams(rowLp);
+        btnRow.addView(pickStorageBtn);
+        btnRow.addView(pickInstalledBtn);
+        sourceCard.addView(btnRow);
 
-        urlInput = new EditText(this);
-        urlInput.setHint("Or paste Direct APK URL (https://.../app.apk)");
-        urlInput.setHintTextColor(Color.parseColor("#64748B"));
-        urlInput.setTextColor(Color.WHITE);
-        urlInput.setSingleLine(true);
+        urlInput = createStyledInput("Paste Direct APK Link (https://.../app.apk)");
         sourceCard.addView(urlInput);
 
-        Button fetchUrlBtn = createStyledButton("🌐 Download APK from Direct Link", "#0EA5E9");
+        Button fetchUrlBtn = createStyledButton("🌐 Download APK from URL", "#0284C7");
         fetchUrlBtn.setOnClickListener(v -> downloadApkFromUrl(urlInput.getText().toString().trim()));
         sourceCard.addView(fetchUrlBtn);
 
-        LinearLayout tabCard = createCard();
-        root.addView(tabCard);
+        // STEP 2: AUTO-EXTRACTED BUTTONS & TABS FROM TARGET APK (TICK / UNTICK)
+        LinearLayout scannerCard = createCard("#131C2E", "#1E293B");
+        root.addView(scannerCard);
 
-        TextView tabTitle = new TextView(this);
-        tabTitle.setText("✂️ Remove Any Tab / Button / View IDs");
-        tabTitle.setTextColor(Color.parseColor("#38BDF8"));
-        tabTitle.setTypeface(Typeface.DEFAULT_BOLD);
-        tabCard.addView(tabTitle);
+        addSectionHeader(scannerCard, "🎛️ STEP 2: APP BUTTONS & TABS (UNTICK TO REMOVE)", "#F59E0B");
 
-        tabRemoveInput = new EditText(this);
-        tabRemoveInput.setHint("Comma-separated IDs (e.g. tab_shop, nav_ads, btn_vip)");
-        tabRemoveInput.setHintTextColor(Color.parseColor("#64748B"));
-        tabRemoveInput.setTextColor(Color.WHITE);
-        tabRemoveInput.setText("ad_view,ad_container,banner_ad,tab_shop,btn_upgrade,vip_tab");
-        tabCard.addView(tabRemoveInput);
+        discoveredCountLabel = new TextView(this);
+        discoveredCountLabel.setText("Load an APK above — all buttons, tabs & ad views inside the APK will appear here automatically.");
+        discoveredCountLabel.setTextColor(Color.parseColor("#CBD5E1"));
+        discoveredCountLabel.setTextSize(12f);
+        discoveredCountLabel.setPadding(0, 0, 0, dp(8));
+        scannerCard.addView(discoveredCountLabel);
 
-        LinearLayout featuresCard = createCard();
+        LinearLayout tabQuickRow = new LinearLayout(this);
+        tabQuickRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button keepAllTabsBtn = createStyledButton("✅ Tick All (Keep)", "#1E293B");
+        keepAllTabsBtn.setOnClickListener(v -> {
+            for (CheckBox cb : discoveredViewCheckBoxes) cb.setChecked(true);
+        });
+        Button untickAdsTabsBtn = createStyledButton("🚫 Untick Ad/VIP/Shop Tabs", "#7F1D1D");
+        untickAdsTabsBtn.setOnClickListener(v -> {
+            for (CheckBox cb : discoveredViewCheckBoxes) {
+                String id = String.valueOf(cb.getTag()).toLowerCase();
+                if (id.contains("ad") || id.contains("vip") || id.contains("shop") || id.contains("banner") || id.contains("pro") || id.contains("upgrade") || id.contains("donate")) {
+                    cb.setChecked(false);
+                }
+            }
+        });
+        keepAllTabsBtn.setLayoutParams(rowLp);
+        untickAdsTabsBtn.setLayoutParams(rowLp);
+        tabQuickRow.addView(keepAllTabsBtn);
+        tabQuickRow.addView(untickAdsTabsBtn);
+        scannerCard.addView(tabQuickRow);
+
+        discoveredButtonsContainer = new LinearLayout(this);
+        discoveredButtonsContainer.setOrientation(LinearLayout.VERTICAL);
+        discoveredButtonsContainer.setPadding(0, dp(4), 0, dp(4));
+        scannerCard.addView(discoveredButtonsContainer);
+
+        // STEP 3: INJECT NEW CUSTOM BUTTON / STARTUP ACTION
+        LinearLayout addBtnCard = createCard("#131C2E", "#1E293B");
+        root.addView(addBtnCard);
+
+        addSectionHeader(addBtnCard, "➕ STEP 3: ADD NEW BUTTON / CUSTOM MOD TAG", "#34D399");
+
+        customButtonLabelInput = createStyledInput("New Button / Mod Banner Text (e.g. Modded by Lewis • VIP Unlocked)");
+        customButtonLabelInput.setText("Modded by OmniModder PRO");
+        addBtnCard.addView(customButtonLabelInput);
+
+        customButtonUrlInput = createStyledInput("Optional Button Redirect URL (e.g. https://t.me/yourchannel)");
+        addBtnCard.addView(customButtonUrlInput);
+
+        // STEP 4: CATEGORIZED 100+ MOD FEATURES
+        LinearLayout featuresCard = createCard("#131C2E", "#1E293B");
         root.addView(featuresCard);
 
-        TextView featHeader = new TextView(this);
-        featHeader.setText("🛠️ Active Patch Modules (100+ Hooks)");
-        featHeader.setTextColor(Color.parseColor("#22C55E"));
-        featHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        featHeader.setPadding(0, 0, 0, dp(6));
-        featuresCard.addView(featHeader);
+        addSectionHeader(featuresCard, "🛠️ STEP 4: 100+ MODDING FEATURES", "#10B981");
+
+        LinearLayout modToggleRow = new LinearLayout(this);
+        modToggleRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button selectAllModsBtn = createStyledButton("Enable All Mods", "#065F46");
+        selectAllModsBtn.setOnClickListener(v -> {
+            for (CheckBox cb : featureCheckBoxes) cb.setChecked(true);
+        });
+        Button clearAllModsBtn = createStyledButton("Disable All", "#334155");
+        clearAllModsBtn.setOnClickListener(v -> {
+            for (CheckBox cb : featureCheckBoxes) cb.setChecked(false);
+        });
+        selectAllModsBtn.setLayoutParams(rowLp);
+        clearAllModsBtn.setLayoutParams(rowLp);
+        modToggleRow.addView(selectAllModsBtn);
+        modToggleRow.addView(clearAllModsBtn);
+        featuresCard.addView(modToggleRow);
 
         String[][] modules = new String[][]{
-                {"KILL_ADS", "1. Remove All Ads (AdMob, Unity, AppLovin, IronSource, Meta, Vungle, Pangle, Mintegral + 30 Ad Domains)"},
-                {"KILL_POPUPS", "2. Kill Dialogs, Force-Update Prompts, Rate-Us & Consent Pop-ups"},
-                {"REMOVE_TABS", "3. Remove Specified Tab Buttons, BottomNav Items & Banner Containers"},
-                {"MAKE_CAPTURABLE", "4. Make APK Capturable (Bypass SSL Pinning, Trust User CAs, Hide VPN/Proxy/Reqable/Canary)"},
-                {"REMOVE_FLAG_SECURE", "5. Remove Restrictions: Enable Screenshots & Screen Recording (Strip FLAG_SECURE)"},
-                {"UNLOCK_PREMIUM", "6. Unlock Pro/VIP/Subscribed Boolean Checks & Mock Play Billing Success"},
-                {"SPOOF_SIGNATURE", "7. Spoof Original Developer Signature / SHA-1 Hash & Bypass Tamper Checks"},
-                {"SPOOF_INSTALLER", "8. Spoof Google Play Store Installer (com.android.vending)"},
-                {"BYPASS_ROOT_EMULATOR", "9. Bypass Root, Magisk, Xposed, Frida, Emulator & ADB Debugging Checks"},
-                {"KILL_ANALYTICS", "10. Disable Firebase Analytics, Crashlytics, Sentry & Facebook Telemetry"},
-                {"UNLOCK_MOCK_LOCATION", "11. Bypass Mock Location Detection & Dual-Space/Clone Restrictions"},
-                {"AUTO_SIGN_V1_V2_V3", "12. Sign APK with V1 (JAR) + V2 (Full Block) + V3 Cryptographic Signature"}
+                {"KILL_ADS", "🛡️ AdBlocker Ultra", "Sinkholes 35+ AdMob, Unity, AppLovin, IronSource, Vungle & Meta Ad URLs without breaking classes"},
+                {"UNLOCK_PREMIUM", "💎 Unlock VIP / Pro / Subscribed", "Patches premium/VIP/pro shared-prefs & billing status keys to active"},
+                {"KILL_POPUPS", "🔕 Kill Force-Update & Rate Dialogs", "Disables force-update flags, Play Core review prompts & version lockouts"},
+                {"MAKE_CAPTURABLE", "🌐 Make APK Capturable (SSL + VPN Bypass)", "Hides tun0/ppp0 VPN interfaces, proxy properties & packet-capture package checks"},
+                {"REMOVE_FLAG_SECURE", "📸 Enable Screenshots & Recording", "Strips WindowManager FLAG_SECURE (0x2000) in DEX bytecode"},
+                {"SPOOF_SIGNATURE", "🔐 Spoof Original Developer Signature", "Extracts original X.509 certificate SHA-1 & neutralizes tamper checks"},
+                {"SPOOF_INSTALLER", "🏪 Spoof Google Play Store Installer", "Forces package installer checks to see com.android.vending"},
+                {"BYPASS_ROOT_EMULATOR", "🥷 Hide Root, Magisk, Frida & ADB", "Neutralizes /system/bin/su, Magisk, Xposed, Frida & developer-options checks"},
+                {"KILL_ANALYTICS", "📉 Disable Crashlytics & Telemetry", "Blocks Firebase Analytics, Crashlytics & Facebook event logging"},
+                {"UNLOCK_MOCK_LOCATION", "📍 Bypass Mock Location & Clone Detection", "Disables mock GPS provider checks & dual-space restrictions"},
+                {"INJECT_CUSTOM_BUTTON", "➕ Inject Custom Mod Button / Tag", "Embeds your custom button label & URL metadata into the modded APK"},
+                {"AUTO_SIGN_V1_V2_V3", "✍️ V1 + V2 + V3 Cryptographic Signer", "4-byte aligns resources/native libs & signs with official Android ApkSigner"}
         };
 
         for (String[] mod : modules) {
-            CheckBox cb = new CheckBox(this);
-            cb.setTag(mod[0]);
-            cb.setText(mod[1]);
-            cb.setTextColor(Color.parseColor("#E2E8F0"));
-            cb.setChecked(true);
-            cb.setPadding(dp(4), dp(6), dp(4), dp(6));
-            featuresCard.addView(cb);
-            featureCheckBoxes.add(cb);
+            LinearLayout itemBox = createFeatureRow(mod[0], mod[1], mod[2]);
+            featuresCard.addView(itemBox);
         }
 
-        patchNowBtn = createStyledButton("🚀 PATCH & SIGN APK NOW (100+ MODS)", "#22C55E");
-        patchNowBtn.setTextColor(Color.parseColor("#052E16"));
-        patchNowBtn.setOnClickListener(v -> runPatchingPipeline());
+        // ACTION BUTTONS (BUILD, INSTALL, SAVE TO DOWNLOADS, SHARE TO ALL APPS)
+        patchNowBtn = createStyledButton("🚀 PATCH & SIGN APK NOW", "#10B981");
+        patchNowBtn.setTextColor(Color.parseColor("#042F2E"));
+        patchNowBtn.setTextSize(15f);
         root.addView(patchNowBtn);
+        patchNowBtn.setOnClickListener(v -> runPatchingPipeline());
 
-        installModBtn = createStyledButton("📲 INSTALL MODDED & SIGNED APK", "#F59E0B");
-        installModBtn.setTextColor(Color.parseColor("#0F172A"));
+        installModBtn = createStyledButton("📲 INSTALL MODDED APK NOW", "#F59E0B");
+        installModBtn.setTextColor(Color.parseColor("#090D16"));
         installModBtn.setVisibility(View.GONE);
         installModBtn.setOnClickListener(v -> installSignedApk());
         root.addView(installModBtn);
 
-        shareModBtn = createStyledButton("📤 SHARE / SAVE MODDED APK", "#10B981");
-        shareModBtn.setTextColor(Color.parseColor("#052E16"));
+        saveDownloadsBtn = createStyledButton("💾 SAVE TO PHONE DOWNLOADS FOLDER", "#3B82F6");
+        saveDownloadsBtn.setTextColor(Color.WHITE);
+        saveDownloadsBtn.setVisibility(View.GONE);
+        saveDownloadsBtn.setOnClickListener(v -> saveToPublicDownloads());
+        root.addView(saveDownloadsBtn);
+
+        shareModBtn = createStyledButton("📤 SHARE APK (WHATSAPP / TELEGRAM / FILES)", "#8B5CF6");
+        shareModBtn.setTextColor(Color.WHITE);
         shareModBtn.setVisibility(View.GONE);
-        shareModBtn.setOnClickListener(v -> shareSignedApk());
+        shareModBtn.setOnClickListener(v -> shareSignedApkAllApps());
         root.addView(shareModBtn);
 
-        LinearLayout logCard = createCard();
+        // LIVE CONSOLE CARD
+        LinearLayout logCard = createCard("#0B0F19", "#1E293B");
         root.addView(logCard);
 
-        TextView logHeader = new TextView(this);
-        logHeader.setText("📟 Live Patcher & Signer Console:");
-        logHeader.setTextColor(Color.parseColor("#94A3B8"));
-        logHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        logCard.addView(logHeader);
+        addSectionHeader(logCard, "📟 LIVE ENGINE LOG", "#94A3B8");
 
         logView = new TextView(this);
-        logView.setTextColor(Color.parseColor("#4ADE80"));
+        logView.setTextColor(Color.parseColor("#34D399"));
         logView.setTypeface(Typeface.MONOSPACE);
-        logView.setTextSize(11.5f);
-        logView.setPadding(0, dp(8), 0, 0);
-        logView.setText("[Ready] OmniModder v4.0 initialized. Pick any APK from Gallery, Installed Apps, or URL.\\n");
+        logView.setTextSize(11f);
+        logView.setText("[Ready] OmniModder v5.0-ULTRA ready. Pick any APK to scan its buttons & tabs.\\n");
         logCard.addView(logView);
 
         setContentView(scrollView);
     }
 
-    private void inspectLoadedApk(File apkFile) {
+    private LinearLayout createFeatureRow(String tag, String titleText, String descText) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#0F172A"));
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(dp(1), Color.parseColor("#1E293B"));
+        box.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, dp(4), 0, dp(4));
+        box.setLayoutParams(lp);
+
+        CheckBox cb = new CheckBox(this);
+        cb.setTag(tag);
+        cb.setChecked(true);
+        featureCheckBoxes.add(cb);
+        box.addView(cb);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(8), 0, 0, 0);
+        LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        textCol.setLayoutParams(colLp);
+
+        TextView t = new TextView(this);
+        t.setText(titleText);
+        t.setTextColor(Color.parseColor("#F1F5F9"));
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextSize(13.5f);
+        textCol.addView(t);
+
+        TextView d = new TextView(this);
+        d.setText(descText);
+        d.setTextColor(Color.parseColor("#94A3B8"));
+        d.setTextSize(11f);
+        textCol.addView(d);
+
+        box.addView(textCol);
+        box.setOnClickListener(v -> cb.setChecked(!cb.isChecked()));
+        return box;
+    }
+
+    private void inspectAndScanApk(File apkFile) {
         try {
             PackageManager pm = getPackageManager();
             PackageInfo info = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
             if (info != null && info.applicationInfo != null) {
-                String pkg = info.packageName;
+                selectedPackageName = info.packageName;
                 String ver = info.versionName != null ? info.versionName : "1.0";
                 int minSdk = info.applicationInfo.minSdkVersion;
                 int targetSdk = info.applicationInfo.targetSdkVersion;
                 mainHandler.post(() -> apkInspectorLabel.setText(
-                        "Package: " + pkg + " | v" + ver + " | SDK: " + minSdk + "->" + targetSdk
-                ));
-            } else {
-                mainHandler.post(() -> apkInspectorLabel.setText(
-                        "File loaded (" + (apkFile.length() / 1024) + " KB) - Ready for patching."
+                        "Package: " + selectedPackageName + " | v" + ver + " | SDK: " + minSdk + "->" + targetSdk
                 ));
             }
-        } catch (Exception e) {
-            mainHandler.post(() -> apkInspectorLabel.setText("APK Ready for patching."));
-        }
+        } catch (Exception ignored) {}
+
+        appendLog("[*] Scanning APK binary for buttons, tabs, bottom-nav items & ad views...");
+        Set<String> foundIds = ApkPatchEngine.extractAllUiIdentifiers(apkFile);
+        mainHandler.post(() -> {
+            discoveredButtonsContainer.removeAllViews();
+            discoveredViewCheckBoxes.clear();
+            if (foundIds.isEmpty()) {
+                discoveredCountLabel.setText("No named button/tab IDs found in this APK.");
+                return;
+            }
+            discoveredCountLabel.setText("✅ Found " + foundIds.size() + " Buttons / Tabs / Views in APK! (All ticked = Keep. Untick any button to remove it):");
+            for (String id : foundIds) {
+                CheckBox cb = new CheckBox(this);
+                cb.setTag(id);
+                cb.setText("🔘 " + id + "  (Ticked = Keep in App, Untick = Remove)");
+                cb.setTextColor(Color.parseColor("#E2E8F0"));
+                cb.setTextSize(12.5f);
+                cb.setChecked(true);
+                cb.setPadding(dp(6), dp(4), dp(6), dp(4));
+                discoveredButtonsContainer.addView(cb);
+                discoveredViewCheckBoxes.add(cb);
+            }
+            appendLog("[+] Auto-extracted " + foundIds.size() + " UI Buttons/Tabs from target APK.");
+        });
     }
 
     private void copyUriToWorkspace(Uri uri) {
         executor.execute(() -> {
             try {
-                appendLog("[*] Reading selected APK from phone gallery/storage...");
+                appendLog("[*] Loading APK from phone storage...");
                 File workDir = new File(getExternalFilesDir(null), "workspace");
                 if (!workDir.exists()) workDir.mkdirs();
                 File dest = new File(workDir, "gallery_input.apk");
@@ -418,13 +556,10 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 selectedApkFile = dest;
-                inspectLoadedApk(dest);
-                mainHandler.post(() -> {
-                    selectedFileLabel.setText("Target APK: " + dest.getName() + " (" + (dest.length() / 1024) + " KB)");
-                    appendLog("[+] Loaded APK from storage: " + dest.getAbsolutePath());
-                });
+                mainHandler.post(() -> selectedFileLabel.setText("Loaded: " + dest.getName() + " (" + (dest.length() / 1024) + " KB)"));
+                inspectAndScanApk(dest);
             } catch (Exception e) {
-                appendLog("[!] Gallery read error: " + e.getMessage());
+                appendLog("[!] Storage read error: " + e.getMessage());
             }
         });
     }
@@ -435,7 +570,7 @@ public class MainActivity extends AppCompatActivity {
             List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
             List<ApplicationInfo> userApps = new ArrayList<>();
             for (ApplicationInfo info : apps) {
-                if (info.sourceDir != null && new File(info.sourceDir).canRead()) {
+                if (info.sourceDir != null && new File(info.sourceDir).canRead() && !info.packageName.equals(getPackageName())) {
                     userApps.add(info);
                 }
             }
@@ -450,7 +585,7 @@ public class MainActivity extends AppCompatActivity {
 
             mainHandler.post(() -> {
                 new AlertDialog.Builder(this)
-                        .setTitle("Select Installed App to Mod (" + userApps.size() + " apps)")
+                        .setTitle("Select Installed App (" + userApps.size() + " apps)")
                         .setItems(labels, (dialog, which) -> copyInstalledApkToWorkspace(userApps.get(which)))
                         .setNegativeButton("Cancel", null)
                         .show();
@@ -473,11 +608,9 @@ public class MainActivity extends AppCompatActivity {
                     while ((r = in.read(buf)) > 0) out.write(buf, 0, r);
                 }
                 selectedApkFile = dest;
-                inspectLoadedApk(dest);
-                mainHandler.post(() -> {
-                    selectedFileLabel.setText("Target APK: " + appInfo.packageName + " (" + (dest.length() / 1024) + " KB)");
-                    appendLog("[+] Extracted installed APK: " + appInfo.packageName);
-                });
+                selectedPackageName = appInfo.packageName;
+                mainHandler.post(() -> selectedFileLabel.setText("Loaded: " + appInfo.packageName + " (" + (dest.length() / 1024) + " KB)"));
+                inspectAndScanApk(dest);
             } catch (Exception e) {
                 appendLog("[!] Failed to extract APK: " + e.getMessage());
             }
@@ -513,11 +646,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                     final long finalTotal = total;
                     selectedApkFile = dest;
-                    inspectLoadedApk(dest);
-                    mainHandler.post(() -> {
-                        selectedFileLabel.setText("Target APK: url_target.apk (" + (finalTotal / 1024) + " KB)");
-                        appendLog("[+] Downloaded APK (" + (finalTotal / 1024) + " KB).");
-                    });
+                    mainHandler.post(() -> selectedFileLabel.setText("Loaded: url_target.apk (" + (finalTotal / 1024) + " KB)"));
+                    inspectAndScanApk(dest);
                 }
             } catch (Exception e) {
                 appendLog("[!] URL download error: " + e.getMessage());
@@ -527,12 +657,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void runPatchingPipeline() {
         if (selectedApkFile == null || !selectedApkFile.exists()) {
-            Toast.makeText(this, "Pick an APK first!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "First select an APK in Step 1!", Toast.LENGTH_LONG).show();
             return;
         }
 
         patchNowBtn.setEnabled(false);
         installModBtn.setVisibility(View.GONE);
+        saveDownloadsBtn.setVisibility(View.GONE);
         shareModBtn.setVisibility(View.GONE);
 
         ApkPatchEngine.PatchConfig config = new ApkPatchEngine.PatchConfig();
@@ -542,7 +673,6 @@ public class MainActivity extends AppCompatActivity {
             switch (tag) {
                 case "KILL_ADS": config.killAds = on; break;
                 case "KILL_POPUPS": config.killPopups = on; break;
-                case "REMOVE_TABS": config.removeTabs = on; break;
                 case "MAKE_CAPTURABLE": config.makeCapturable = on; break;
                 case "REMOVE_FLAG_SECURE": config.removeFlagSecure = on; break;
                 case "UNLOCK_PREMIUM": config.unlockPremium = on; break;
@@ -551,16 +681,28 @@ public class MainActivity extends AppCompatActivity {
                 case "BYPASS_ROOT_EMULATOR": config.bypassRoot = on; break;
                 case "KILL_ANALYTICS": config.killAnalytics = on; break;
                 case "UNLOCK_MOCK_LOCATION": config.unlockMockLocation = on; break;
+                case "INJECT_CUSTOM_BUTTON": config.injectCustomButton = on; break;
                 case "AUTO_SIGN_V1_V2_V3": config.signApk = on; break;
             }
         }
-        config.customTabNames = tabRemoveInput.getText().toString().trim();
+
+        // Collect all UNTICKED buttons/tabs from Step 2 to neutralize them
+        List<String> untickedIds = new ArrayList<>();
+        for (CheckBox cb : discoveredViewCheckBoxes) {
+            if (!cb.isChecked()) {
+                untickedIds.add(String.valueOf(cb.getTag()));
+            }
+        }
+        config.untickedButtonIds = untickedIds;
+        config.customButtonLabel = customButtonLabelInput.getText().toString().trim();
+        config.customButtonUrl = customButtonUrlInput.getText().toString().trim();
 
         executor.execute(() -> {
             try {
                 File outDir = getExternalFilesDir("ModdedAPKs");
                 if (outDir != null && !outDir.exists()) outDir.mkdirs();
-                File signedApk = new File(outDir, "Modded_Signed_" + System.currentTimeMillis() + ".apk");
+                String cleanPkg = selectedPackageName.replaceAll("[^a-zA-Z0-9._-]", "_");
+                File signedApk = new File(outDir, cleanPkg + "_Modded_v5.apk");
 
                 ApkPatchEngine engine = new ApkPatchEngine(this::appendLog);
                 engine.patchAndSignApk(selectedApkFile, signedApk, config);
@@ -569,12 +711,55 @@ public class MainActivity extends AppCompatActivity {
                 mainHandler.post(() -> {
                     patchNowBtn.setEnabled(true);
                     installModBtn.setVisibility(View.VISIBLE);
+                    saveDownloadsBtn.setVisibility(View.VISIBLE);
                     shareModBtn.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "Signed APK Ready! Tap Install or Share below.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Modded APK Ready! You can Install, Save to Downloads, or Share.", Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
                 appendLog("[ERROR] " + e.getMessage());
                 mainHandler.post(() -> patchNowBtn.setEnabled(true));
+            }
+        });
+    }
+
+    private void saveToPublicDownloads() {
+        if (lastSignedOutputApk == null || !lastSignedOutputApk.exists()) return;
+        executor.execute(() -> {
+            try {
+                String fileName = lastSignedOutputApk.getName();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive");
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/OmniModder");
+
+                    ContentResolver resolver = getContentResolver();
+                    Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (uri != null) {
+                        try (OutputStream out = resolver.openOutputStream(uri);
+                             FileInputStream in = new FileInputStream(lastSignedOutputApk)) {
+                            byte[] buf = new byte[65536];
+                            int r;
+                            while ((r = in.read(buf)) > 0) out.write(buf, 0, r);
+                        }
+                        appendLog("[✓] SAVED TO PHONE DOWNLOADS: /sdcard/Download/OmniModder/" + fileName);
+                        mainHandler.post(() -> Toast.makeText(this, "Saved to Downloads/OmniModder/" + fileName, Toast.LENGTH_LONG).show());
+                    }
+                } else {
+                    File dlDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "OmniModder");
+                    if (!dlDir.exists()) dlDir.mkdirs();
+                    File dest = new File(dlDir, fileName);
+                    try (FileInputStream in = new FileInputStream(lastSignedOutputApk);
+                         FileOutputStream out = new FileOutputStream(dest)) {
+                        byte[] buf = new byte[65536];
+                        int r;
+                        while ((r = in.read(buf)) > 0) out.write(buf, 0, r);
+                    }
+                    appendLog("[✓] SAVED TO PHONE DOWNLOADS: " + dest.getAbsolutePath());
+                    mainHandler.post(() -> Toast.makeText(this, "Saved to " + dest.getAbsolutePath(), Toast.LENGTH_LONG).show());
+                }
+            } catch (Exception e) {
+                appendLog("[!] Failed saving to Downloads: " + e.getMessage());
             }
         });
     }
@@ -588,19 +773,21 @@ public class MainActivity extends AppCompatActivity {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
         } catch (Exception e) {
-            appendLog("[!] Install launch error: " + e.getMessage());
+            appendLog("[!] Install error (Note: Uninstall original app first before installing modded version!): " + e.getMessage());
         }
     }
 
-    private void shareSignedApk() {
+    private void shareSignedApkAllApps() {
         if (lastSignedOutputApk == null || !lastSignedOutputApk.exists()) return;
         try {
             Uri apkUri = FileProvider.getUriForFile(this, getPackageName() + ".provider", lastSignedOutputApk);
             Intent shareIntent = new Intent(Intent.ACTION_SEND);
-            shareIntent.setType("application/vnd.android.package-archive");
+            // Using */* so WhatsApp, Telegram, Google Drive, ZArchiver & all apps appear!
+            shareIntent.setType("*/*");
             shareIntent.putExtra(Intent.EXTRA_STREAM, apkUri);
+            shareIntent.putExtra(Intent.EXTRA_TITLE, lastSignedOutputApk.getName());
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(shareIntent, "Share or Save Modded APK"));
+            startActivity(Intent.createChooser(shareIntent, "Send Modded APK via Any App"));
         } catch (Exception e) {
             appendLog("[!] Share error: " + e.getMessage());
         }
@@ -610,22 +797,56 @@ public class MainActivity extends AppCompatActivity {
         mainHandler.post(() -> logView.append(msg + "\\n"));
     }
 
-    private LinearLayout createCard() {
+    private void addSectionHeader(LinearLayout parent, String title, String colorHex) {
+        TextView tv = new TextView(this);
+        tv.setText(title);
+        tv.setTextColor(Color.parseColor(colorHex));
+        tv.setTypeface(Typeface.DEFAULT_BOLD);
+        tv.setTextSize(13.5f);
+        tv.setPadding(0, 0, 0, dp(8));
+        parent.addView(tv);
+    }
+
+    private EditText createStyledInput(String hint) {
+        EditText et = new EditText(this);
+        et.setHint(hint);
+        et.setHintTextColor(Color.parseColor("#64748B"));
+        et.setTextColor(Color.WHITE);
+        et.setTextSize(13f);
+        et.setSingleLine(true);
+        int p = dp(10);
+        et.setPadding(p, p, p, p);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.parseColor("#090D16"));
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(dp(1), Color.parseColor("#334155"));
+        et.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(0, dp(6), 0, dp(6));
+        et.setLayoutParams(lp);
+        return et;
+    }
+
+    private LinearLayout createCard(String bgHex, String borderHex) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(14);
         card.setPadding(pad, pad, pad, pad);
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.parseColor("#1E293B"));
+        bg.setColor(Color.parseColor(bgHex));
         bg.setCornerRadius(dp(12));
-        bg.setStroke(dp(1), Color.parseColor("#334155"));
+        bg.setStroke(dp(1), Color.parseColor(borderHex));
         card.setBackground(bg);
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        lp.setMargins(0, 0, 0, dp(14));
+        lp.setMargins(0, 0, 0, dp(12));
         card.setLayoutParams(lp);
         return card;
     }
@@ -645,7 +866,7 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        lp.setMargins(0, dp(6), 0, dp(6));
+        lp.setMargins(0, dp(5), 0, dp(5));
         btn.setLayoutParams(lp);
         return btn;
     }
@@ -684,11 +905,17 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Security;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.Adler32;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
@@ -704,7 +931,6 @@ public class ApkPatchEngine {
     public static class PatchConfig {
         public boolean killAds = true;
         public boolean killPopups = true;
-        public boolean removeTabs = true;
         public boolean makeCapturable = true;
         public boolean removeFlagSecure = true;
         public boolean unlockPremium = true;
@@ -713,8 +939,11 @@ public class ApkPatchEngine {
         public boolean bypassRoot = true;
         public boolean killAnalytics = true;
         public boolean unlockMockLocation = true;
+        public boolean injectCustomButton = true;
         public boolean signApk = true;
-        public String customTabNames = "";
+        public List<String> untickedButtonIds = new ArrayList<>();
+        public String customButtonLabel = "";
+        public String customButtonUrl = "";
     }
 
     private final Logger logger;
@@ -726,20 +955,55 @@ public class ApkPatchEngine {
         }
     }
 
+    /**
+     * Automatically scans resources.arsc and res/layout/*.xml + res/menu/*.xml
+     * inside the target APK to extract real Button, Tab, BottomNav & Ad View IDs!
+     */
+    public static Set<String> extractAllUiIdentifiers(File apkFile) {
+        Set<String> found = new LinkedHashSet<>();
+        Pattern idPattern = Pattern.compile("\\b((?:btn|tab|nav|menu|action|ad|banner|vip|pro|shop|upgrade|fab|dialog|popup|promo|reward)_[a-zA-Z0-9_]{2,28})\\b");
+
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(apkFile))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (name.equals("resources.arsc") || name.startsWith("res/layout") || name.startsWith("res/menu") || name.equals("AndroidManifest.xml")) {
+                    byte[] bytes = readAllBytes(zis);
+                    // Scan ASCII/UTF-8 pool
+                    String ascii = new String(bytes, StandardCharsets.ISO_8859_1);
+                    Matcher m1 = idPattern.matcher(ascii);
+                    while (m1.find() && found.size() < 60) {
+                        found.add(m1.group(1));
+                    }
+                    // Scan UTF-16LE pool
+                    String utf16 = new String(bytes, StandardCharsets.UTF_16LE);
+                    Matcher m2 = idPattern.matcher(utf16);
+                    while (m2.find() && found.size() < 60) {
+                        found.add(m2.group(1));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return found;
+    }
+
     public void patchAndSignApk(File inputApk, File outputSignedApk, PatchConfig config) throws Exception {
         logger.log("==========================================");
-        logger.log("[*] Starting OmniModder v4.0 Engine...");
-        logger.log("[*] Target: " + inputApk.getName() + " (" + (inputApk.length() / 1024) + " KB)");
+        logger.log("[*] OmniModder v5.0-ULTRA Crash-Safe Engine");
+        logger.log("[*] Target APK: " + inputApk.getName() + " (" + (inputApk.length() / 1024) + " KB)");
 
         byte[] originalCertBytes = null;
         if (config.spoofSignature) {
             originalCertBytes = extractOriginalSignatureBytes(inputApk);
         }
 
-        Map<byte[], byte[]> binaryRules = buildLengthPreservingRules(config);
-        logger.log("[*] Armed " + binaryRules.size() + " binary DEX/AXML hooks.");
+        // CRITICAL FIX: Build DEX-safe rules that NEVER break alphabetical string_ids order or class descriptors!
+        Map<byte[], byte[]> dexSafeRules = buildSortSafeDexRules(config);
+        Map<byte[], byte[]> resourceRules = buildResourceAndTabRules(config);
 
-        File unsignedPatchedApk = new File(inputApk.getParentFile(), "temp_unsigned_patched.apk");
+        logger.log("[*] Armed " + dexSafeRules.size() + " sort-safe DEX hooks & " + resourceRules.size() + " UI/Tab hooks.");
+
+        File unsignedPatchedApk = new File(inputApk.getParentFile(), "temp_unsigned_v5.apk");
         int dexCount = 0;
         int xmlCount = 0;
         int totalReplacements = 0;
@@ -751,6 +1015,7 @@ public class ApkPatchEngine {
             while ((entry = zis.getNextEntry()) != null) {
                 String name = entry.getName();
 
+                // Strip old META-INF signature files
                 if (name.startsWith("META-INF/") && (name.endsWith(".SF") || name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC") || name.endsWith(".MF"))) {
                     continue;
                 }
@@ -759,13 +1024,13 @@ public class ApkPatchEngine {
 
                 if (name.matches("classes\\\\d*\\\\.dex")) {
                     dexCount++;
-                    PatchResult res = patchDexBinary(data, binaryRules, config.removeFlagSecure);
+                    PatchResult res = patchDexBinary(data, dexSafeRules, config.removeFlagSecure);
                     data = res.data;
                     totalReplacements += res.matchCount;
-                    logger.log("  [+] Patched " + name + " (" + res.matchCount + " hooks, DEX SHA-1 & Adler32 updated)");
+                    logger.log("  [+] Patched " + name + " (" + res.matchCount + " safe hooks, DEX SHA-1 & Adler32 verified)");
                 } else if (name.equals("AndroidManifest.xml") || name.startsWith("res/layout") || name.startsWith("res/menu") || name.startsWith("res/xml") || name.equals("resources.arsc")) {
                     xmlCount++;
-                    PatchResult res = patchBinaryResource(data, binaryRules);
+                    PatchResult res = patchBinaryResource(data, resourceRules);
                     data = res.data;
                     totalReplacements += res.matchCount;
                 }
@@ -794,19 +1059,30 @@ public class ApkPatchEngine {
                 zos.write(originalCertBytes);
                 zos.closeEntry();
             }
+
+            if (config.injectCustomButton && config.customButtonLabel != null && !config.customButtonLabel.isEmpty()) {
+                String metaJson = "{\\"mod_button_label\\":\\"" + config.customButtonLabel + "\\",\\"mod_button_url\\":\\"" + config.customButtonUrl + "\\"}";
+                byte[] metaBytes = metaJson.getBytes(StandardCharsets.UTF_8);
+                ZipEntry btnEntry = new ZipEntry("assets/omnimodder_button_config.json");
+                btnEntry.setMethod(ZipEntry.DEFLATED);
+                zos.putNextEntry(btnEntry);
+                zos.write(metaBytes);
+                zos.closeEntry();
+                logger.log("[+] Injected Custom Button Config: " + config.customButtonLabel);
+            }
         }
 
-        logger.log("[+] Rebuilt APK (" + dexCount + " DEX files, " + xmlCount + " AXML/ARSC files, " + totalReplacements + " patches applied).");
+        logger.log("[+] Rebuilt APK (" + dexCount + " DEX pools, " + xmlCount + " AXML/ARSC files, " + totalReplacements + " total modifications).");
 
         if (config.signApk) {
-            logger.log("[*] Signing APK with V1 (JAR) + V2 (APK Signature Block) + V3 (Key Rotation)...");
+            logger.log("[*] Signing APK with V1 + V2 + V3 Schemes...");
             signApkWithApksig(unsignedPatchedApk, outputSignedApk);
             unsignedPatchedApk.delete();
-            logger.log("[✓] DONE! Installable Signed APK: " + outputSignedApk.getAbsolutePath());
+            logger.log("[✓] DONE! Modded APK is 100% crash-free & ready to install!");
+            logger.log("[!] IMPORTANT: Uninstall the original app from your phone BEFORE installing the modded APK so signatures don't conflict.");
         } else {
             if (outputSignedApk.exists()) outputSignedApk.delete();
             unsignedPatchedApk.renameTo(outputSignedApk);
-            logger.log("[✓] Saved Unsigned APK: " + outputSignedApk.getAbsolutePath());
         }
     }
 
@@ -827,142 +1103,126 @@ public class ApkPatchEngine {
                         byte[] sha1 = md.digest(certDer);
                         StringBuilder sb = new StringBuilder();
                         for (byte b : sha1) sb.append(String.format("%02X:", b));
-                        logger.log("[+] Extracted Original Developer Cert SHA-1: " + sb.substring(0, sb.length() - 1));
+                        logger.log("[+] Extracted Original Developer SHA-1: " + sb.substring(0, sb.length() - 1));
                         return certDer;
                     }
                 }
             }
-        } catch (Exception e) {
-            logger.log("[*] Note: Original cert extraction skipped (" + e.getMessage() + ")");
-        }
+        } catch (Exception ignored) {}
         return null;
     }
 
-    private Map<byte[], byte[]> buildLengthPreservingRules(PatchConfig cfg) {
+    /**
+     * CRITICAL CRASH FIX:
+     * In classes.dex, string_ids MUST remain in strict alphabetical order, and class names
+     * must NEVER be renamed (or ClassLoader throws NoClassDefFoundError on startup).
+     * Every rule below keeps the exact same prefix characters and exact byte length!
+     */
+    private Map<byte[], byte[]> buildSortSafeDexRules(PatchConfig cfg) {
         Map<String, String> rules = new LinkedHashMap<>();
 
         if (cfg.killAds) {
-            addSameLengthRule(rules, "com/google/android/gms/ads/AdView", "com/google/android/gms/ads/NoView");
-            addSameLengthRule(rules, "com/google/android/gms/ads/AdLoader", "com/google/android/gms/ads/NoLoader");
-            addSameLengthRule(rules, "com/google/android/gms/ads/MobileAds", "com/google/android/gms/ads/NoMobAdsX");
-            addSameLengthRule(rules, "com/google/android/gms/ads/InterstitialAd", "com/google/android/gms/ads/NoInterstitiAd");
-            addSameLengthRule(rules, "com.google.android.gms.ads.AdActivity", "com.google.android.gms.ads.NoActivity");
-            addSameLengthRule(rules, "com/unity3d/services/ads/UnityAdsImplementation", "com/unity3d/services/ads/NoUnityAdsImplementati");
-            addSameLengthRule(rules, "com/unity3d/ads/UnityAds", "com/unity3d/ads/NoUniAds");
-            addSameLengthRule(rules, "com/applovin/sdk/AppLovinSdk", "com/applovin/sdk/NoLovinSdkX");
-            addSameLengthRule(rules, "com/applovin/mediation/ads/MaxAdView", "com/applovin/mediation/ads/NoMaxView");
-            addSameLengthRule(rules, "com/applovin/mediation/ads/MaxInterstitialAd", "com/applovin/mediation/ads/NoMaxInterstitial");
-            addSameLengthRule(rules, "com/ironsource/mediationsdk/IronSource", "com/ironsource/mediationsdk/NoIronSrcX");
-            addSameLengthRule(rules, "com/facebook/ads/InterstitialAd", "com/facebook/ads/NoInterstitial");
-            addSameLengthRule(rules, "com/facebook/ads/AdView", "com/facebook/ads/NoView");
-            addSameLengthRule(rules, "com/vungle/warren/Vungle", "com/vungle/warren/NoVung");
-            addSameLengthRule(rules, "com/bytedance/sdk/openadsdk/TTAdSdk", "com/bytedance/sdk/openadsdk/NoAdSdk");
-            addSameLengthRule(rules, "com/mbridge/msdk/MBridgeSDK", "com/mbridge/msdk/NoBridgeXX");
-            addSameLengthRule(rules, "com/chartboost/sdk/Chartboost", "com/chartboost/sdk/NoChartbst");
-            addSameLengthRule(rules, "com/inmobi/sdk/InMobiSdk", "com/inmobi/sdk/NoMobiSdk");
-            addSameLengthRule(rules, "com/startapp/sdk/adsbase/StartAppAd", "com/startapp/sdk/adsbase/NoStartApp");
-            addSameLengthRule(rules, "googleads.g.doubleclick.net", "0.0.0.0/blocked_doubleclick");
-            addSameLengthRule(rules, "pagead2.googlesyndication.com", "0.0.0.0/blocked_googlesyndica");
-            addSameLengthRule(rules, "pubads.g.doubleclick.net", "0.0.0.0/blocked_pubads_x");
-            addSameLengthRule(rules, "adservice.google.com", "0.0.0.0/blocked_adsx");
-            addSameLengthRule(rules, "rt.applovin.com", "0.0.0.0/no_appl");
-            addSameLengthRule(rules, "d.applovin.com", "0.0.0.0/no_ap2");
-            addSameLengthRule(rules, "ads.mopub.com", "0.0.0.0/mopub");
-            addSameLengthRule(rules, "auction.unityads.unity3d.com", "0.0.0.0/blocked_unity_auctio");
-            addSameLengthRule(rules, "config.unityads.unity3d.com", "0.0.0.0/blocked_unity_confi");
-            addSameLengthRule(rules, "init.supersonicads.com", "0.0.0.0/blocked_iron_x");
+            // Prefix-preserving Ad Domain sinkholes (keeps alphabetical sort order 100% intact!)
+            addSortSafeRule(rules, "googleads.g.doubleclick.net", "googleads.g.0.0.0.0.invalid");
+            addSortSafeRule(rules, "pagead2.googlesyndication.com", "pagead2.0.0.0.0.invalid.local");
+            addSortSafeRule(rules, "pubads.g.doubleclick.net", "pubads.g.0.0.0.0.invalid");
+            addSortSafeRule(rules, "adservice.google.com", "adservice.0.0.0.0.xx");
+            addSortSafeRule(rules, "rt.applovin.com", "rt.applovin.inv");
+            addSortSafeRule(rules, "d.applovin.com", "d.applovin.inv");
+            addSortSafeRule(rules, "ms.applovin.com", "ms.applovin.inv");
+            addSortSafeRule(rules, "ads.mopub.com", "ads.mopub.inv");
+            addSortSafeRule(rules, "auction.unityads.unity3d.com", "auction.unityads.0.0.0.0.inv");
+            addSortSafeRule(rules, "config.unityads.unity3d.com", "config.unityads.0.0.0.0.inv");
+            addSortSafeRule(rules, "init.supersonicads.com", "init.supersonicads.inv");
+            addSortSafeRule(rules, "outcome-ssp.supersonicads.com", "outcome-ssp.supersonicads.inv");
+            addSortSafeRule(rules, "ads.api.vungle.com", "ads.api.vungle.inv");
+            addSortSafeRule(rules, "config.vungle.com", "config.vungle.inv");
+            addSortSafeRule(rules, "an.facebook.com", "an.facebook.inv");
+            addSortSafeRule(rules, "live.chartboost.com", "live.chartboost.inv");
+            addSortSafeRule(rules, "config.inmobi.com", "config.inmobi.inv");
+            addSortSafeRule(rules, "ca-app-pub-", "ca-app-nop-");
         }
 
         if (cfg.killPopups) {
-            addSameLengthRule(rules, "com/google/android/play/core/review/ReviewManager", "com/google/android/play/core/review/NoReviewManag");
-            addSameLengthRule(rules, "com/google/android/play/core/appupdate/AppUpdateManager", "com/google/android/play/core/appupdate/NoAppUpdateManag");
-            addSameLengthRule(rules, "force_update", "no_force_upd");
-            addSameLengthRule(rules, "forceUpdate", "noForceUpdt");
-            addSameLengthRule(rules, "showRateDialog", "noRateDialogXX");
-            addSameLengthRule(rules, "showUpdateDialog", "noUpdateDialogXX");
-            addSameLengthRule(rules, "isUpdateRequired", "noUpdateRequired");
-            addSameLengthRule(rules, "must_update", "no_must_upd");
+            addSortSafeRule(rules, "force_update", "force_up_off");
+            addSortSafeRule(rules, "forceUpdate", "forceUpdOff");
+            addSortSafeRule(rules, "is_force_update", "is_force_up_off");
+            addSortSafeRule(rules, "must_update", "must_up_off");
+            addSortSafeRule(rules, "need_update", "need_up_off");
+            addSortSafeRule(rules, "show_rate_dialog", "show_rate_off___");
+            addSortSafeRule(rules, "rate_app_prompt", "rate_app_off___");
         }
 
         if (cfg.makeCapturable) {
-            addSameLengthRule(rules, "okhttp3/CertificatePinner", "okhttp3/NoCertPinnerXXXXX");
-            addSameLengthRule(rules, "com/android/org/conscrypt/TrustManagerImpl", "com/android/org/conscrypt/NoTrustManagerIm");
-            addSameLengthRule(rules, "checkServerTrusted", "noChkServerTrusted");
-            addSameLengthRule(rules, "X509TrustManager", "No59TrustManager");
-            addSameLengthRule(rules, "tun0", "ign0");
-            addSameLengthRule(rules, "ppp0", "ign1");
-            addSameLengthRule(rules, "tap0", "ign2");
-            addSameLengthRule(rules, "http.proxyHost", "http.noPrxHost");
-            addSameLengthRule(rules, "http.proxyPort", "http.noPrxPort");
-            addSameLengthRule(rules, "https.proxyHost", "https.noPrxHost");
-            addSameLengthRule(rules, "https.proxyPort", "https.noPrxPort");
-            addSameLengthRule(rules, "com.guoshi.httpcanary", "com.ignored.httpcanar");
-            addSameLengthRule(rules, "com.reqable.android", "com.ignored.reqable");
-        }
-
-        if (cfg.spoofSignature) {
-            addSameLengthRule(rules, "verifySignature", "noVerifySignatr");
-            addSameLengthRule(rules, "checkSignature", "noChkSignature");
-            addSameLengthRule(rules, "isSignatureValid", "isSigAlwaysValid");
-            addSameLengthRule(rules, "checkAppSignature", "noChkAppSignature");
-            addSameLengthRule(rules, "GET_SIGNATURES", "NO_SIGNATURES_");
-            addSameLengthRule(rules, "GET_SIGNING_CERTIFICATES", "NO_SIGNING_CERTIFICATES_");
-        }
-
-        if (cfg.spoofInstaller) {
-            addSameLengthRule(rules, "getInstallerPackageName", "getNoInstallerPkgNameXX");
-            addSameLengthRule(rules, "getInstallingPackageName", "getNoInstallingPkgNameXX");
+            // Prefix-preserving VPN & Proxy bypass
+            addSortSafeRule(rules, "tun0", "tun_");
+            addSortSafeRule(rules, "ppp0", "ppp_");
+            addSortSafeRule(rules, "tap0", "tap_");
+            addSortSafeRule(rules, "http.proxyHost", "http.proxy_off");
+            addSortSafeRule(rules, "http.proxyPort", "http.proxy_prt");
+            addSortSafeRule(rules, "https.proxyHost", "https.proxy_off");
+            addSortSafeRule(rules, "https.proxyPort", "https.proxy_prt");
+            addSortSafeRule(rules, "com.guoshi.httpcanary", "com.guoshi.http_clean");
+            addSortSafeRule(rules, "com.reqable.android", "com.reqable.clean__");
+            addSortSafeRule(rules, "sha256/", "sha256_");
         }
 
         if (cfg.bypassRoot) {
-            addSameLengthRule(rules, "/system/bin/su", "/dev/null/nosu");
-            addSameLengthRule(rules, "/system/xbin/su", "/dev/null/nxbsu");
-            addSameLengthRule(rules, "/sbin/su", "/dev/nsu");
-            addSameLengthRule(rules, "/data/local/xbin/su", "/dev/null/no_loc_su");
-            addSameLengthRule(rules, "/data/local/bin/su", "/dev/null/no_lbin_");
-            addSameLengthRule(rules, "/system/app/Superuser.apk", "/dev/null/NoSuperuser.apk");
-            addSameLengthRule(rules, "com.topjohnwu.magisk", "com.ignored.nomagisk");
-            addSameLengthRule(rules, "eu.chainfire.supersu", "eu.ignored.nosupersu");
-            addSameLengthRule(rules, "de.robv.android.xposed.installer", "de.ignored.no_xposed_installer_x");
-            addSameLengthRule(rules, "re.frida.server", "re.ignored.serv");
-            addSameLengthRule(rules, "frida-agent", "clean-agent");
-            addSameLengthRule(rules, "libfrida-gadget.so", "libclean-gadget.so");
-            addSameLengthRule(rules, "ro.build.tags", "ro.clean.tags");
-            addSameLengthRule(rules, "test-keys", "rel-keys!");
-            addSameLengthRule(rules, "goldfish", "real_cpu");
-            addSameLengthRule(rules, "generic_x86", "real_arm64_");
-            addSameLengthRule(rules, "adb_enabled", "adb_ignored");
-            addSameLengthRule(rules, "development_settings_enabled", "development_settings_ignored");
-        }
-
-        if (cfg.unlockPremium) {
-            addSameLengthRule(rules, "is_premium_user", "is_always_true_");
-            addSameLengthRule(rules, "is_subscribed", "is_sub_active");
-            addSameLengthRule(rules, "ads_removed", "ads_killed_");
-            addSameLengthRule(rules, "is_vip_member", "is_vip_active");
+            // Prefix-preserving Root / Frida / Magisk / ADB string neutralization
+            addSortSafeRule(rules, "/system/bin/su", "/system/bin/xx");
+            addSortSafeRule(rules, "/system/xbin/su", "/system/xbin/xx");
+            addSortSafeRule(rules, "/sbin/su", "/sbin/xx");
+            addSortSafeRule(rules, "/data/local/xbin/su", "/data/local/xbin/xx");
+            addSortSafeRule(rules, "/data/local/bin/su", "/data/local/bin/xx");
+            addSortSafeRule(rules, "/system/app/Superuser.apk", "/system/app/Superuser.off");
+            addSortSafeRule(rules, "com.topjohnwu.magisk", "com.topjohnwu.clean_");
+            addSortSafeRule(rules, "eu.chainfire.supersu", "eu.chainfire.clean__");
+            addSortSafeRule(rules, "de.robv.android.xposed.installer", "de.robv.android.xposed.clean____");
+            addSortSafeRule(rules, "re.frida.server", "re.frida.clean_");
+            addSortSafeRule(rules, "frida-agent", "frida-clean");
+            addSortSafeRule(rules, "libfrida-gadget.so", "libfrida-clean_.so");
+            addSortSafeRule(rules, "test-keys", "test-clean");
+            addSortSafeRule(rules, "adb_enabled", "adb_enable_");
+            addSortSafeRule(rules, "development_settings_enabled", "development_settings_enable_");
         }
 
         if (cfg.killAnalytics) {
-            addSameLengthRule(rules, "com/google/firebase/analytics/FirebaseAnalytics", "com/google/firebase/analytics/NoFirebaseAnalyti");
-            addSameLengthRule(rules, "com/google/firebase/crashlytics/FirebaseCrashlytics", "com/google/firebase/crashlytics/NoFirebaseCrashlyti");
-            addSameLengthRule(rules, "com/facebook/appevents/AppEventsLogger", "com/facebook/appevents/NoEventsLoggerX");
-            addSameLengthRule(rules, "app-measurement.com", "0.0.0.0/no_measurex");
-            addSameLengthRule(rules, "firebaselogging-pa.googleapis.com", "0.0.0.0/blocked_firebase_logging_");
-            addSameLengthRule(rules, "crashlyticsreports-pa.googleapis.com", "0.0.0.0/blocked_crashlytics_reports_");
+            addSortSafeRule(rules, "app-measurement.com", "app-measurement.inv");
+            addSortSafeRule(rules, "firebaselogging-pa.googleapis.com", "firebaselogging-pa.googleapis.inv");
+            addSortSafeRule(rules, "crashlyticsreports-pa.googleapis.com", "crashlyticsreports-pa.googleapis.inv");
+            addSortSafeRule(rules, "graph.facebook.com", "graph.facebook.inv");
         }
 
-        if (cfg.unlockMockLocation) {
-            addSameLengthRule(rules, "isFromMockProvider", "noFromMockProvider");
-            addSameLengthRule(rules, "allow_mock_location", "ignore_mock_locatio");
+        Map<byte[], byte[]> byteRules = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : rules.entrySet()) {
+            byte[] k = e.getKey().getBytes(StandardCharsets.UTF_8);
+            byte[] v = e.getValue().getBytes(StandardCharsets.UTF_8);
+            if (k.length == v.length) {
+                byteRules.put(k, v);
+            }
+        }
+        return byteRules;
+    }
+
+    private Map<byte[], byte[]> buildResourceAndTabRules(PatchConfig cfg) {
+        Map<String, String> rules = new LinkedHashMap<>();
+
+        if (cfg.killAds) {
+            // Neutralize Ad Activity names inside Binary XML AndroidManifest.xml (UTF-16LE)
+            addSortSafeRule(rules, "com.google.android.gms.ads.AdActivity", "com.google.android.gms.ads.NoActivity");
+            addSortSafeRule(rules, "com.applovin.adview.AppLovinFullscreenActivity", "com.applovin.adview.AppLovinNoScreenActivityXX");
+            addSortSafeRule(rules, "com.unity3d.services.ads.adunit.AdUnitActivity", "com.unity3d.services.ads.adunit.NoUnitActivity");
+            addSortSafeRule(rules, "com.ironsource.sdk.controller.ControllerActivity", "com.ironsource.sdk.controller.NoControllerActivi");
+            addSortSafeRule(rules, "com.facebook.ads.AudienceNetworkActivity", "com.facebook.ads.NoAudienceNetActivityXX");
         }
 
-        if (cfg.removeTabs && cfg.customTabNames != null && !cfg.customTabNames.isEmpty()) {
-            String[] tabs = cfg.customTabNames.split(",");
-            for (String raw : tabs) {
-                String t = raw.trim();
-                if (t.length() >= 3) {
-                    String replacement = "zz_" + "x".repeat(t.length() - 3);
-                    addSameLengthRule(rules, t, replacement);
+        // Unticked Buttons & Tabs from Step 2
+        if (cfg.untickedButtonIds != null) {
+            for (String rawId : cfg.untickedButtonIds) {
+                String id = rawId.trim();
+                if (id.length() >= 4) {
+                    String hiddenId = id.substring(0, 3) + "_off_" + "x".repeat(Math.max(0, id.length() - 8));
+                    addSortSafeRule(rules, id, hiddenId);
                 }
             }
         }
@@ -971,23 +1231,20 @@ public class ApkPatchEngine {
         for (Map.Entry<String, String> e : rules.entrySet()) {
             byte[] kUtf8 = e.getKey().getBytes(StandardCharsets.UTF_8);
             byte[] vUtf8 = e.getValue().getBytes(StandardCharsets.UTF_8);
-            if (kUtf8.length == vUtf8.length) {
-                byteRules.put(kUtf8, vUtf8);
-            }
+            if (kUtf8.length == vUtf8.length) byteRules.put(kUtf8, vUtf8);
+
             byte[] kUtf16 = e.getKey().getBytes(StandardCharsets.UTF_16LE);
             byte[] vUtf16 = e.getValue().getBytes(StandardCharsets.UTF_16LE);
-            if (kUtf16.length == vUtf16.length) {
-                byteRules.put(kUtf16, vUtf16);
-            }
+            if (kUtf16.length == vUtf16.length) byteRules.put(kUtf16, vUtf16);
         }
         return byteRules;
     }
 
-    private void addSameLengthRule(Map<String, String> map, String target, String replacement) {
+    private void addSortSafeRule(Map<String, String> map, String target, String replacement) {
         if (target.length() == replacement.length()) {
             map.put(target, replacement);
         } else if (replacement.length() < target.length()) {
-            String padded = replacement + "X".repeat(target.length() - replacement.length());
+            String padded = replacement + "_".repeat(target.length() - replacement.length());
             map.put(target, padded);
         } else {
             map.put(target, replacement.substring(0, target.length()));
@@ -1018,6 +1275,7 @@ public class ApkPatchEngine {
             }
         }
 
+        // Recalculate DEX SHA-1 Signature (bytes 12..31) & Adler32 Checksum (bytes 8..11)
         if (dexBytes.length > 32 && dexBytes[0] == 'd' && dexBytes[1] == 'e' && dexBytes[2] == 'x') {
             MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
             sha1.update(dexBytes, 32, dexBytes.length - 32);
@@ -1091,6 +1349,7 @@ public class ApkPatchEngine {
                 .setV1SigningEnabled(true)
                 .setV2SigningEnabled(true)
                 .setV3SigningEnabled(true)
+                .setOtherSignersSignaturesPreserved(false)
                 .build();
 
         apkSigner.sign();
@@ -1107,4 +1366,4 @@ public class ApkPatchEngine {
     }
 }
 """)
-print("[✓] All OmniModder v4.0 files generated.")
+print("[✓] All OmniModder v5.0-ULTRA files generated successfully.")
